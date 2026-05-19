@@ -4,7 +4,7 @@
 
 ### Validations
 * Validate that goals, thoughts, and to-dos are being accuretley pulled from
-* Continue testing to-do list features - do they work consitently?
+* Continue testing to-do list features - do they work consitently? Are they useful?
 
 ### Updates/Refinements:
 * Better initialize width & wrap settings for free-text fields in all facts tables.
@@ -14,5 +14,4 @@
 
 ### Major Features/items:
 * Add optionality for a RAG conversation with your journal enteries.
-* Add
 
