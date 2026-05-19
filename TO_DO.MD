@@ -13,7 +13,7 @@
 * Upadate ReadME so it's cleaner, and less AI sloppy!
 * Get rid of the reminders table, which is currently pretty much unnecesary model slop.
 * Update the Journal so it handles archiving stuff better. (Maybe get rid of onEdit, or push things to an archive/completed section.)
-  * Possibly add a "Congrats" feature in the email for when things go well?
+  * Possibly add a "Congrats" feature in the email for when goals get marked as complete?
 
 ### Major Features/items:
 * Add feature for a "conversation with your journal enteries." This would likeley use long-context with a mini gpt model to manage cost.
