@@ -2,7 +2,7 @@
 
 Voice Memo Journal is a lightweight Google Sheets and Google Apps Script project for turning spoken voice memos into a searchable personal journal. It uses a Google Drive inbox folder, OpenAI transcription and extraction, and a Google Sheet as the review surface for entries, goals, to-dos, thoughts, reminders, and digest configuration.
 
-For installation instructions, see [Setup.MD](Setup.MD).
+For installation instructions, see [SETUP.MD](SETUP.MD).
 
 ## Purpose
 
