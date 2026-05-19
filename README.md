@@ -18,13 +18,64 @@ The system is meant to help with:
 
 ## Pipeline
 
+The pipeline starts with an audio file in Google Drive and builds structured journal tables from that source file.
+
 1. A voice memo is recorded on a phone.
-2. The audio file is uploaded into a configured Google Drive inbox folder.
+2. The audio file is uploaded into the configured Google Drive inbox folder.
 3. A Google Apps Script poller checks the folder every 15 minutes.
-4. New audio files are transcribed with the OpenAI transcription API.
-5. The transcript is sent to an OpenAI text model for structured extraction.
-6. The system writes the original entry and derived records into Google Sheet tabs.
-7. A scheduled digest email summarizes the active items and recent reflections.
+4. Each new Drive file is treated as the source record for one journal entry.
+5. The file is transcribed with the OpenAI transcription API.
+6. The transcript is sent to an OpenAI text model for structured extraction.
+7. The script writes one row to `Entries` for the processed Drive file.
+8. The script writes downstream rows to `Goals`, `To-Dos`, and `Thoughts` based on the extracted transcript content.
+9. The script writes reminder rows for extracted goals and to-dos.
+10. A scheduled digest email summarizes active goals, relevant to-dos, due reminders, and recent reflections.
+
+In short:
+
+```mermaid
+flowchart TD
+    drive["Google Drive audio file"]
+    entries["Entries\ntranscript + processing metadata"]
+    goals["Goals\nextracted from entry transcript"]
+    todos["To-Dos\nextracted from entry transcript"]
+    thoughts["Thoughts\nextracted from entry transcript"]
+    reminders["Reminders\ncreated from goals + to-dos"]
+    digest["Email Digest\nactive items + recent reflections"]
+
+    drive -->|"Drive file ID, URL, uploaded_at"| entries
+    entries -->|"entry_id"| goals
+    entries -->|"entry_id"| todos
+    entries -->|"entry_id"| thoughts
+    goals -->|"goal_id"| reminders
+    todos -->|"todo_id"| reminders
+    goals --> digest
+    todos --> digest
+    thoughts --> digest
+    reminders --> digest
+```
+
+## Data Model
+
+The Google Drive audio file is the root object in the data model. The script uses the Drive file ID to deduplicate processing, so one unique Drive file should produce one `Entries` row.
+
+`Entries` is the primary journal table. It is derivative of the Drive file and stores the file link, Drive file ID, upload time, transcript, processing status, retry count, and extraction flags. It is the parent record for all extracted journal content.
+
+`Goals`, `To-Dos`, and `Thoughts` are downstream tables. They are not independent source records; they are derived from the transcript stored in `Entries`. Each row links back to its source entry with `entry_id`.
+
+`Reminders` is another downstream table. It is created from extracted goals and to-dos, then updated as digest emails are sent. Reminder rows link back to both the source entry and the specific goal or to-do that produced the reminder.
+
+`Config` is separate from the journal lineage. It stores user-controlled settings such as the Drive inbox folder, digest recipient, model names, reminder defaults, and mood tag list.
+
+The core relationships are:
+
+- One Google Drive audio file creates one `Entries` row.
+- One `Entries` row can create zero or more `Goals` rows.
+- One `Entries` row can create zero or more `To-Dos` rows.
+- One `Entries` row can create zero or more `Thoughts` rows.
+- One `Goals` row can create one `Reminders` row.
+- One `To-Dos` row can create one `Reminders` row.
+- `Thoughts` rows do not create reminders by default.
 
 ## Project Structure
 
