@@ -3,7 +3,7 @@
 #### Last Updated 5/19/26
 
 ### Validations
-* Validate that goals, thoughts, and to-dos are being accuretley pulled from
+* Validate that goals, thoughts, and to-dos are being accuretley pulled from entries.
 * Continue testing to-do list features - do they work consitently? Are they useful?
 
 ### Updates/Refinements:
