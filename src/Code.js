@@ -119,7 +119,7 @@ const DEFAULT_CONFIG = [
   ['DEFAULT_TODO_REMINDER_FREQUENCY_DAYS', '3', 'Default reminder frequency for to-dos when the memo is unclear.'],
   ['DIGEST_RECIPIENT_EMAIL', '', 'Required. Daily digest recipient email address.'],
   ['DIGEST_FREQUENCY_PER_WEEK', '7', 'How many days per week to send the digest. 7 = daily, 5 = weekdays, 3 = Mon/Wed/Fri.'],
-  ['DIGEST_SEND_HOUR', '8', 'Hour of day, 0-23, for the daily digest trigger.'],
+  ['DIGEST_SEND_HOUR', '18', 'Hour of day, 0-23, for the daily digest trigger. Default 18 = 6 PM.'],
   ['DIGEST_LOOKBACK_DAYS', '7', 'Number of days of recent thoughts and to-dos to include in the digest.'],
   ['MOOD_TAGS', MOOD_TAGS.join(','), 'Allowed mood tags for extracted thoughts.'],
   ['EXTRACTION_PROMPT', defaultExtractionPrompt_(), 'Prompt used to extract goals, to-dos, and big-idea thoughts from transcripts.'],
@@ -241,7 +241,7 @@ function installDailyDigestTrigger() {
   setupVoiceJournalSheet();
   removeDailyDigestTrigger();
   const config = readConfig_(SpreadsheetApp.getActiveSpreadsheet());
-  const sendHour = clampInteger_(parseInteger_(config.DIGEST_SEND_HOUR, 8), 0, 23);
+  const sendHour = clampInteger_(parseInteger_(config.DIGEST_SEND_HOUR, 18), 0, 23);
   ScriptApp.newTrigger('sendScheduledDailyDigest')
     .timeBased()
     .everyDays(1)

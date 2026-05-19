@@ -116,7 +116,7 @@ The most important `Config` values are:
 - `TRANSCRIPTION_MODEL`: OpenAI audio transcription model.
 - `EXTRACTION_MODEL`: OpenAI text model for structured extraction.
 - `DIGEST_FREQUENCY_PER_WEEK`: Number of digest days per week.
-- `DIGEST_SEND_HOUR`: Hour of day for scheduled digest delivery.
+- `DIGEST_SEND_HOUR`: Hour of day for scheduled digest delivery; default `18` sends at 6 PM.
 - `DIGEST_LOOKBACK_DAYS`: Number of days included in recent thought and to-do review.
 - `MOOD_TAGS`: Allowed mood tags for extracted thoughts.
 

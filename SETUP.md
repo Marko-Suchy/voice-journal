@@ -68,7 +68,7 @@ Set:
 Optional values can stay at their defaults at first. The most useful ones to revisit later are:
 
 - `DIGEST_FREQUENCY_PER_WEEK`
-- `DIGEST_SEND_HOUR`
+- `DIGEST_SEND_HOUR`, which defaults to `18` for 6 PM.
 - `DIGEST_LOOKBACK_DAYS`
 - `DEFAULT_GOAL_ACTIVE_DAYS`
 - `DEFAULT_GOAL_REMINDER_FREQUENCY_DAYS`
