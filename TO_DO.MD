@@ -14,4 +14,5 @@
 
 ### Major Features/items:
 * Add optionality for a RAG conversation with your journal enteries.
+* Consider how I could get people to actually test this thing, without having to make people get an OpenAI API... could I sell API keys for $5 or something like that?!
 
