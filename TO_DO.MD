@@ -13,6 +13,6 @@
 * Upadate ReadME so it's cleaner, and less AI sloppy!
 
 ### Major Features/items:
-* Add optionality for a RAG conversation with your journal enteries.
+* Add feature for a "conversation with your journal enteries." This would likeley use long-context with a mini gpt model to manage cost.
 * Consider how I could get people to actually test this thing, without having to make people get an OpenAI API... could I sell API keys for $5 or something like that?!
 
