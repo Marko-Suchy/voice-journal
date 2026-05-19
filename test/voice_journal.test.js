@@ -1,8 +1,10 @@
 const assert = require('assert');
 
 const {
+  buildDashboardGoalRows_,
   buildDashboardTodoRows_,
   buildRecentMoodCounts_,
+  dashboardGoalActionStatus_,
   dashboardCheckboxStatus_,
   moodCountsToRows_,
 } = require('../src/Code.js');
@@ -71,4 +73,41 @@ test('maps dashboard checkbox edits to todo statuses', function() {
   assert.strictEqual(dashboardCheckboxStatus_('TRUE'), 'Done');
   assert.strictEqual(dashboardCheckboxStatus_(false), 'Open');
   assert.strictEqual(dashboardCheckboxStatus_('FALSE'), 'Open');
+});
+
+test('filters active dashboard goals', function() {
+  const rows = [
+    { values: { goal_id: 'goal_1', summary: 'Run a half marathon', status: 'Active', active_until: '2026-06-01', created_at: '2026-05-18' } },
+    { values: { goal_id: 'goal_2', summary: 'Read more', status: 'Open', active_until: '', created_at: '2026-05-17' } },
+    { values: { goal_id: 'goal_3', summary: 'Done goal', status: 'Complete', active_until: '', created_at: '2026-05-16' } },
+  ];
+
+  const dashboardRows = buildDashboardGoalRows_(rows);
+
+  assert.strictEqual(dashboardRows.length, 2);
+  assert.deepStrictEqual(dashboardRows.map(function(row) { return row[5]; }), ['goal_1', 'goal_2']);
+  assert.strictEqual(dashboardRows[0][0], '');
+});
+
+test('excludes complete completed and archived dashboard goals', function() {
+  const rows = [
+    { values: { goal_id: 'goal_1', summary: 'Done goal', status: 'Complete' } },
+    { values: { goal_id: 'goal_2', summary: 'Also done', status: 'Completed' } },
+    { values: { goal_id: 'goal_3', summary: 'Archived goal', status: 'Archived' } },
+    { values: { goal_id: 'goal_4', summary: 'Active goal', status: 'Active' } },
+  ];
+
+  const dashboardRows = buildDashboardGoalRows_(rows);
+
+  assert.strictEqual(dashboardRows.length, 1);
+  assert.strictEqual(dashboardRows[0][5], 'goal_4');
+});
+
+test('maps dashboard goal actions to source statuses', function() {
+  assert.strictEqual(dashboardGoalActionStatus_('Complete'), 'Complete');
+  assert.strictEqual(dashboardGoalActionStatus_('complete'), 'Complete');
+  assert.strictEqual(dashboardGoalActionStatus_('Archive'), 'Archived');
+  assert.strictEqual(dashboardGoalActionStatus_('archive'), 'Archived');
+  assert.strictEqual(dashboardGoalActionStatus_(''), '');
+  assert.strictEqual(dashboardGoalActionStatus_('Active'), '');
 });

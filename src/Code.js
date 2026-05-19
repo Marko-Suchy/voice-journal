@@ -38,8 +38,14 @@ const DASHBOARD = {
   TODO_START_COLUMN: 1,
   TODO_COLUMN_COUNT: 6,
   TODO_ID_COLUMN: 6,
+  GOAL_TITLE_ROW: 3,
+  GOAL_HEADER_ROW: 4,
+  GOAL_START_ROW: 5,
+  GOAL_START_COLUMN: 8,
+  GOAL_COLUMN_COUNT: 6,
+  GOAL_ID_COLUMN: 13,
   MOOD_START_ROW: 5,
-  MOOD_START_COLUMN: 8,
+  MOOD_START_COLUMN: 15,
   MOOD_COLUMN_COUNT: 2,
   MOOD_LOOKBACK_DAYS: 7,
 };
@@ -156,21 +162,52 @@ function onEdit(e) {
   }
 
   const sheet = e.range.getSheet();
-  if (sheet.getName() !== SHEET_NAMES.DASHBOARD
-      || e.range.getColumn() !== DASHBOARD.TODO_START_COLUMN
-      || e.range.getRow() < DASHBOARD.TODO_START_ROW) {
-    return;
-  }
-
-  const todoId = sheet.getRange(e.range.getRow(), DASHBOARD.TODO_ID_COLUMN).getValue();
-  if (!todoId) {
+  if (sheet.getName() !== SHEET_NAMES.DASHBOARD) {
     return;
   }
 
   const spreadsheet = e.source || SpreadsheetApp.getActiveSpreadsheet();
+  if (handleDashboardTodoEdit_(spreadsheet, sheet, e)) {
+    return;
+  }
+
+  handleDashboardGoalEdit_(spreadsheet, sheet, e);
+}
+
+function handleDashboardTodoEdit_(spreadsheet, sheet, e) {
+  if (e.range.getColumn() !== DASHBOARD.TODO_START_COLUMN || e.range.getRow() < DASHBOARD.TODO_START_ROW) {
+    return false;
+  }
+
+  const todoId = sheet.getRange(e.range.getRow(), DASHBOARD.TODO_ID_COLUMN).getValue();
+  if (!todoId) {
+    return false;
+  }
+
   const nextStatus = dashboardCheckboxStatus_(e.value);
   updateTodoStatusById_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS), todoId, nextStatus);
   sheet.getRange(e.range.getRow(), 3).setValue(nextStatus);
+  return true;
+}
+
+function handleDashboardGoalEdit_(spreadsheet, sheet, e) {
+  if (e.range.getColumn() !== DASHBOARD.GOAL_START_COLUMN || e.range.getRow() < DASHBOARD.GOAL_START_ROW) {
+    return false;
+  }
+
+  const nextStatus = dashboardGoalActionStatus_(e.value);
+  if (!nextStatus) {
+    return false;
+  }
+
+  const goalId = sheet.getRange(e.range.getRow(), DASHBOARD.GOAL_ID_COLUMN).getValue();
+  if (!goalId) {
+    return false;
+  }
+
+  updateGoalStatusById_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS), goalId, nextStatus);
+  refreshDashboard_(spreadsheet, new Date());
+  return true;
 }
 
 function setOpenAiApiKey(apiKey) {
@@ -481,8 +518,10 @@ function removeDerivedRowsForEntry_(spreadsheet, entryId) {
 function refreshDashboard_(spreadsheet, now) {
   const dashboardSheet = getOrCreateSheet_(spreadsheet, SHEET_NAMES.DASHBOARD);
   const todoRows = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS));
+  const goalRows = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS));
   const thoughtRows = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.THOUGHTS));
   const dashboardTodos = buildDashboardTodoRows_(todoRows);
+  const dashboardGoals = buildDashboardGoalRows_(goalRows);
   const moodCounts = buildRecentMoodCounts_(thoughtRows, now, DASHBOARD.MOOD_LOOKBACK_DAYS);
   const moodRows = moodCountsToRows_(moodCounts);
 
@@ -494,6 +533,7 @@ function refreshDashboard_(spreadsheet, now) {
   dashboardSheet.getRange('A2').setValue('Last refreshed: ' + formatDateTimeForDashboard_(now));
 
   renderDashboardTodos_(dashboardSheet, dashboardTodos);
+  renderDashboardGoals_(dashboardSheet, dashboardGoals);
   renderDashboardMoods_(dashboardSheet, moodRows);
 }
 
@@ -521,14 +561,50 @@ function renderDashboardTodos_(sheet, dashboardTodos) {
 
   sheet.setColumnWidth(1, 70);
   sheet.setColumnWidth(2, 360);
+  sheet.getRange(1, 2, sheet.getMaxRows(), 1).setWrap(true);
   sheet.setColumnWidth(3, 90);
   sheet.setColumnWidth(4, 110);
   sheet.setColumnWidth(5, 110);
   sheet.hideColumns(DASHBOARD.TODO_ID_COLUMN);
 }
 
+function renderDashboardGoals_(sheet, dashboardGoals) {
+  const headerRange = sheet.getRange(DASHBOARD.GOAL_HEADER_ROW, DASHBOARD.GOAL_START_COLUMN, 1, DASHBOARD.GOAL_COLUMN_COUNT);
+  headerRange
+    .setValues([['Action', 'Goal', 'Status', 'Active Until', 'Created', 'goal_id']])
+    .setFontWeight('bold')
+    .setBackground('#f1f3f4');
+  sheet.getRange(DASHBOARD.GOAL_TITLE_ROW, DASHBOARD.GOAL_START_COLUMN).setValue('Active Goals').setFontWeight('bold');
+
+  if (dashboardGoals.length === 0) {
+    sheet.getRange(DASHBOARD.GOAL_START_ROW, DASHBOARD.GOAL_START_COLUMN).setValue('No active goals.');
+  } else {
+    const range = sheet.getRange(
+      DASHBOARD.GOAL_START_ROW,
+      DASHBOARD.GOAL_START_COLUMN,
+      dashboardGoals.length,
+      DASHBOARD.GOAL_COLUMN_COUNT
+    );
+    range.setValues(dashboardGoals);
+    const validation = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Complete', 'Archive'], true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(DASHBOARD.GOAL_START_ROW, DASHBOARD.GOAL_START_COLUMN, dashboardGoals.length, 1).setDataValidation(validation);
+    sheet.getRange(DASHBOARD.GOAL_START_ROW, DASHBOARD.GOAL_START_COLUMN + 3, dashboardGoals.length, 2).setNumberFormat('yyyy-mm-dd');
+  }
+
+  sheet.setColumnWidth(DASHBOARD.GOAL_START_COLUMN, 100);
+  sheet.setColumnWidth(DASHBOARD.GOAL_START_COLUMN + 1, 340);
+  sheet.getRange(1, DASHBOARD.GOAL_START_COLUMN + 1, sheet.getMaxRows(), 1).setWrap(true);
+  sheet.setColumnWidth(DASHBOARD.GOAL_START_COLUMN + 2, 90);
+  sheet.setColumnWidth(DASHBOARD.GOAL_START_COLUMN + 3, 120);
+  sheet.setColumnWidth(DASHBOARD.GOAL_START_COLUMN + 4, 110);
+  sheet.hideColumns(DASHBOARD.GOAL_ID_COLUMN);
+}
+
 function renderDashboardMoods_(sheet, moodRows) {
-  sheet.getRange('H3').setValue('Moods - Last 7 Days').setFontWeight('bold');
+  sheet.getRange(3, DASHBOARD.MOOD_START_COLUMN).setValue('Moods - Last 7 Days').setFontWeight('bold');
   sheet.getRange(
     4,
     DASHBOARD.MOOD_START_COLUMN,
@@ -548,13 +624,13 @@ function renderDashboardMoods_(sheet, moodRows) {
     DASHBOARD.MOOD_COLUMN_COUNT
   );
   moodRange.setValues(moodRows);
-  sheet.setColumnWidth(8, 140);
-  sheet.setColumnWidth(9, 80);
+  sheet.setColumnWidth(DASHBOARD.MOOD_START_COLUMN, 140);
+  sheet.setColumnWidth(DASHBOARD.MOOD_START_COLUMN + 1, 80);
 
   const chart = sheet.newChart()
     .asPieChart()
     .addRange(sheet.getRange(4, DASHBOARD.MOOD_START_COLUMN, moodRows.length + 1, DASHBOARD.MOOD_COLUMN_COUNT))
-    .setPosition(4, 11, 0, 0)
+    .setPosition(4, DASHBOARD.MOOD_START_COLUMN + 3, 0, 0)
     .setOption('title', 'Moods - Last 7 Days')
     .setOption('pieHole', 0.35)
     .build();
@@ -580,6 +656,23 @@ function buildDashboardTodoRows_(rows) {
         parseDate_(todo.due_date_optional) || '',
         parseDate_(todo.created_at) || '',
         todo.todo_id,
+      ];
+    });
+}
+
+function buildDashboardGoalRows_(rows) {
+  return normalizeRowsForValues_(rows)
+    .filter(function(goal) {
+      return goal.goal_id && goal.summary && !isDoneStatus_(goal.status);
+    })
+    .map(function(goal) {
+      return [
+        '',
+        goal.summary,
+        goal.status || 'Active',
+        parseDate_(goal.active_until) || '',
+        parseDate_(goal.created_at) || '',
+        goal.goal_id,
       ];
     });
 }
@@ -626,6 +719,17 @@ function dashboardCheckboxStatus_(value) {
   return value === true || String(value).toUpperCase() === 'TRUE' ? 'Done' : 'Open';
 }
 
+function dashboardGoalActionStatus_(value) {
+  const action = String(value || '').trim().toLowerCase();
+  if (action === 'complete') {
+    return 'Complete';
+  }
+  if (action === 'archive') {
+    return 'Archived';
+  }
+  return '';
+}
+
 function updateTodoStatusById_(todosSheet, todoId, status) {
   const headers = getHeaders_(todosSheet);
   const idColumnIndex = headers.indexOf('todo_id');
@@ -638,6 +742,24 @@ function updateTodoStatusById_(todosSheet, todoId, status) {
   for (let i = 0; i < ids.length; i++) {
     if (ids[i][0] === todoId) {
       todosSheet.getRange(i + 2, statusColumnIndex + 1).setValue(status);
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateGoalStatusById_(goalsSheet, goalId, status) {
+  const headers = getHeaders_(goalsSheet);
+  const idColumnIndex = headers.indexOf('goal_id');
+  const statusColumnIndex = headers.indexOf('status');
+  if (idColumnIndex === -1 || statusColumnIndex === -1 || goalsSheet.getLastRow() < 2) {
+    return false;
+  }
+
+  const ids = goalsSheet.getRange(2, idColumnIndex + 1, goalsSheet.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i][0] === goalId) {
+      goalsSheet.getRange(i + 2, statusColumnIndex + 1).setValue(status);
       return true;
     }
   }
@@ -1261,9 +1383,11 @@ if (typeof module !== 'undefined') {
     shouldSendDigestOnDate_,
     isDoneStatus_,
     buildDashboardTodoRows_,
+    buildDashboardGoalRows_,
     buildRecentMoodCounts_,
     moodCountsToRows_,
     dashboardCheckboxStatus_,
+    dashboardGoalActionStatus_,
     extractionSchema_,
     defaultExtractionPrompt_,
   };

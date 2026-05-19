@@ -102,13 +102,13 @@ Check the spreadsheet after it finishes:
 - `Entries` should contain the processed memo and transcript.
 - `Goals`, `To-Dos`, and `Thoughts` may contain extracted records depending on the memo content.
 - `Reminders` should contain linked reminder rows for extracted goals and to-dos.
-- `Dashboard` should refresh with active to-dos and the last 7 days of mood tags.
+- `Dashboard` should refresh with active goals, active to-dos, and the last 7 days of mood tags.
 
 If processing fails, check the `status`, `error`, and `retry_count` columns in `Entries`.
 
 ## 7. Test The Dashboard
 
-After at least one to-do or thought has been added, run:
+After at least one goal, to-do, or thought has been added, run:
 
 ```javascript
 refreshDashboardNow()
@@ -119,6 +119,8 @@ Confirm that:
 - Active to-dos appear on the `Dashboard` tab.
 - Checking a dashboard to-do updates the matching source row in `To-Dos` to `Done`.
 - Unchecking a dashboard to-do updates the matching source row in `To-Dos` to `Open`.
+- Active goals appear on the `Dashboard` tab.
+- Selecting `Complete` or `Archive` from a dashboard goal dropdown updates the matching source row in `Goals` and removes the goal from the dashboard.
 - Mood tags from `Thoughts` rows created in the last 7 days appear in the mood summary table and pie chart.
 
 You can also refresh from the custom `Voice Journal > Refresh Dashboard` menu after reopening the spreadsheet.
@@ -174,7 +176,7 @@ The current script uses the Google Drive file ID for deduplication and the Drive
 
 Use the sheet as the review surface:
 
-- Use `Dashboard` for quick active to-do review and weekly mood trends.
+- Use `Dashboard` for quick active goal review, active to-do review, and weekly mood trends.
 - Mark completed to-dos as `Done`, `Complete`, or `Archived`.
 - Mark completed goals as `Done`, `Complete`, or `Archived`.
 - Keep active goals as `Active`.
@@ -203,6 +205,6 @@ If extraction fails, check the `EXTRACTION_MODEL` and `EXTRACTION_PROMPT` config
 
 If the digest does not send on a scheduled day, confirm `DIGEST_FREQUENCY_PER_WEEK`, `DIGEST_SEND_HOUR`, and the installed triggers in Apps Script.
 
-If the dashboard does not update, run `refreshDashboardNow()` manually and check that `To-Dos` has `todo_id`, `task`, and `status` values, and that `Thoughts` has `moods` and `created_at` values.
+If the dashboard does not update, run `refreshDashboardNow()` manually and check that `Goals` has `goal_id`, `summary`, and `status` values, that `To-Dos` has `todo_id`, `task`, and `status` values, and that `Thoughts` has `moods` and `created_at` values.
 
 If duplicate files appear, check whether the same audio was uploaded as separate Drive files. Deduplication is based on Google Drive file ID, not audio content.
