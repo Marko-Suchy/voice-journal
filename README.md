@@ -14,6 +14,7 @@ The system is meant to help with:
 - Extracting goals and to-dos from natural speech.
 - Saving larger reflections as tagged thoughts.
 - Creating reminder rows for active goals and open tasks.
+- Reviewing active to-dos and recent mood trends in a Sheets-native dashboard.
 - Sending an email digest of active goals, relevant to-dos, and recent reflections.
 
 ## Pipeline
@@ -82,12 +83,13 @@ The core relationships are:
 - `src/Code.js`: Google Apps Script implementation.
 - `test/voice_journal.test.js`: Local mock tests for pure helper behavior.
 - `README.md`: High-level project overview.
-- `Setup.MD`: Detailed setup and operating instructions.
+- `SETUP.md`: Detailed setup and operating instructions.
 
 ## Google Sheet Tabs
 
 Running `setupVoiceJournalSheet()` creates and maintains these tabs:
 
+- `Dashboard`: Interactive review surface with active to-dos and a 7-day moods chart.
 - `Entries`: One row per processed voice memo, including transcript, status, retry count, and error details.
 - `Goals`: Goal records extracted from transcripts.
 - `To-Dos`: Task records extracted from transcripts.
@@ -100,6 +102,8 @@ Running `setupVoiceJournalSheet()` creates and maintains these tabs:
 Every processed memo creates one `Entries` row. Extracted goals, to-dos, and thoughts are linked back to that entry through `entry_id`.
 
 The `status` fields are intentionally simple. Values like `Open`, `Active`, `Done`, `Complete`, and `Archived` control what remains active in reminders and digests. Completed or archived goals and to-dos are ignored by future reminder logic.
+
+The `Dashboard` tab rebuilds from the source tables. It shows active to-dos with checkboxes that update the source `To-Dos.status` field, plus a pie chart of mood tags from the last 7 days of `Thoughts`.
 
 The `uploaded_at` value comes from the Google Drive file creation time. If the original device recording time matters, include it in the filename or transcript context.
 
@@ -116,7 +120,7 @@ The most important `Config` values are:
 - `DIGEST_LOOKBACK_DAYS`: Number of days included in recent thought and to-do review.
 - `MOOD_TAGS`: Allowed mood tags for extracted thoughts.
 
-See [Setup.MD](Setup.MD) for the full setup flow.
+See [SETUP.md](SETUP.md) for the full setup flow.
 
 ## Local Tests
 
@@ -133,7 +137,7 @@ These tests do not call Google or OpenAI services. They are intended to validate
 - The Apps Script source is currently deployed by copying `src/Code.js` into a bound Apps Script project.
 - The pipeline does not archive processed audio files by default.
 - Date inference depends on transcript context and may be imperfect for phrases like "tomorrow" or "next week."
-- The digest is plain-text email, not an interactive dashboard.
+- The dashboard is Sheets-native; richer search, RAG, and custom web app panels are not included yet.
 
 ## Credits
 

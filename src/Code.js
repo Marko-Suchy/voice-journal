@@ -7,6 +7,7 @@
  */
 
 const SHEET_NAMES = {
+  DASHBOARD: 'Dashboard',
   ENTRIES: 'Entries',
   GOALS: 'Goals',
   TODOS: 'To-Dos',
@@ -31,6 +32,17 @@ const MOOD_TAGS = [
 ];
 
 const DONE_STATUSES = ['done', 'complete', 'completed', 'archived'];
+
+const DASHBOARD = {
+  TODO_START_ROW: 5,
+  TODO_START_COLUMN: 1,
+  TODO_COLUMN_COUNT: 6,
+  TODO_ID_COLUMN: 6,
+  MOOD_START_ROW: 5,
+  MOOD_START_COLUMN: 8,
+  MOOD_COLUMN_COUNT: 2,
+  MOOD_LOOKBACK_DAYS: 7,
+};
 
 const HEADERS = {
   Entries: [
@@ -112,6 +124,7 @@ function onOpen() {
     .createMenu('Voice Journal')
     .addItem('Setup Sheet', 'setupVoiceJournalSheet')
     .addItem('Process Inbox Now', 'processVoiceMemoInbox')
+    .addItem('Refresh Dashboard', 'refreshDashboardNow')
     .addItem('Install 15-Minute Poller', 'installVoiceMemoPoller')
     .addSeparator()
     .addItem('Send Digest Now', 'sendDailyDigestNow')
@@ -128,7 +141,36 @@ function setupVoiceJournalSheet() {
     ensureHeaders_(sheet, HEADERS[sheetName]);
     sheet.setFrozenRows(1);
   });
+  getOrCreateSheet_(spreadsheet, SHEET_NAMES.DASHBOARD);
   seedConfigDefaults_(spreadsheet.getSheetByName(SHEET_NAMES.CONFIG));
+}
+
+function refreshDashboardNow() {
+  setupVoiceJournalSheet();
+  refreshDashboard_(SpreadsheetApp.getActiveSpreadsheet(), new Date());
+}
+
+function onEdit(e) {
+  if (!e || !e.range) {
+    return;
+  }
+
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== SHEET_NAMES.DASHBOARD
+      || e.range.getColumn() !== DASHBOARD.TODO_START_COLUMN
+      || e.range.getRow() < DASHBOARD.TODO_START_ROW) {
+    return;
+  }
+
+  const todoId = sheet.getRange(e.range.getRow(), DASHBOARD.TODO_ID_COLUMN).getValue();
+  if (!todoId) {
+    return;
+  }
+
+  const spreadsheet = e.source || SpreadsheetApp.getActiveSpreadsheet();
+  const nextStatus = dashboardCheckboxStatus_(e.value);
+  updateTodoStatusById_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS), todoId, nextStatus);
+  sheet.getRange(e.range.getRow(), 3).setValue(nextStatus);
 }
 
 function setOpenAiApiKey(apiKey) {
@@ -257,6 +299,7 @@ function processVoiceMemoInbox() {
       });
     }
   }
+  refreshDashboard_(spreadsheet, new Date());
 }
 
 function processVoiceMemoFile_(file, entryId, config) {
@@ -433,6 +476,172 @@ function removeDerivedRowsForEntry_(spreadsheet, entryId) {
     const sheet = spreadsheet.getSheetByName(sheetName);
     deleteRowsWhereColumnEquals_(sheet, 'entry_id', entryId);
   });
+}
+
+function refreshDashboard_(spreadsheet, now) {
+  const dashboardSheet = getOrCreateSheet_(spreadsheet, SHEET_NAMES.DASHBOARD);
+  const todoRows = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS));
+  const thoughtRows = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.THOUGHTS));
+  const dashboardTodos = buildDashboardTodoRows_(todoRows);
+  const moodCounts = buildRecentMoodCounts_(thoughtRows, now, DASHBOARD.MOOD_LOOKBACK_DAYS);
+  const moodRows = moodCountsToRows_(moodCounts);
+
+  removeCharts_(dashboardSheet);
+  dashboardSheet.clear();
+  dashboardSheet.setHiddenGridlines(true);
+  dashboardSheet.setFrozenRows(0);
+  dashboardSheet.getRange('A1').setValue('Voice Journal Dashboard').setFontSize(18).setFontWeight('bold');
+  dashboardSheet.getRange('A2').setValue('Last refreshed: ' + formatDateTimeForDashboard_(now));
+
+  renderDashboardTodos_(dashboardSheet, dashboardTodos);
+  renderDashboardMoods_(dashboardSheet, moodRows);
+}
+
+function renderDashboardTodos_(sheet, dashboardTodos) {
+  const headerRange = sheet.getRange(4, DASHBOARD.TODO_START_COLUMN, 1, DASHBOARD.TODO_COLUMN_COUNT);
+  headerRange
+    .setValues([['Done', 'Task', 'Status', 'Due Date', 'Created', 'todo_id']])
+    .setFontWeight('bold')
+    .setBackground('#f1f3f4');
+  sheet.getRange('A3').setValue('Active To-Dos').setFontWeight('bold');
+
+  if (dashboardTodos.length === 0) {
+    sheet.getRange(DASHBOARD.TODO_START_ROW, DASHBOARD.TODO_START_COLUMN).setValue('No active to-dos.');
+  } else {
+    const range = sheet.getRange(
+      DASHBOARD.TODO_START_ROW,
+      DASHBOARD.TODO_START_COLUMN,
+      dashboardTodos.length,
+      DASHBOARD.TODO_COLUMN_COUNT
+    );
+    range.setValues(dashboardTodos);
+    sheet.getRange(DASHBOARD.TODO_START_ROW, DASHBOARD.TODO_START_COLUMN, dashboardTodos.length, 1).insertCheckboxes();
+    sheet.getRange(DASHBOARD.TODO_START_ROW, 4, dashboardTodos.length, 2).setNumberFormat('yyyy-mm-dd');
+  }
+
+  sheet.setColumnWidth(1, 70);
+  sheet.setColumnWidth(2, 360);
+  sheet.setColumnWidth(3, 90);
+  sheet.setColumnWidth(4, 110);
+  sheet.setColumnWidth(5, 110);
+  sheet.hideColumns(DASHBOARD.TODO_ID_COLUMN);
+}
+
+function renderDashboardMoods_(sheet, moodRows) {
+  sheet.getRange('H3').setValue('Moods - Last 7 Days').setFontWeight('bold');
+  sheet.getRange(
+    4,
+    DASHBOARD.MOOD_START_COLUMN,
+    1,
+    DASHBOARD.MOOD_COLUMN_COUNT
+  ).setValues([['Mood', 'Count']]).setFontWeight('bold').setBackground('#f1f3f4');
+
+  if (moodRows.length === 0) {
+    sheet.getRange(DASHBOARD.MOOD_START_ROW, DASHBOARD.MOOD_START_COLUMN).setValue('No moods in the last 7 days.');
+    return;
+  }
+
+  const moodRange = sheet.getRange(
+    DASHBOARD.MOOD_START_ROW,
+    DASHBOARD.MOOD_START_COLUMN,
+    moodRows.length,
+    DASHBOARD.MOOD_COLUMN_COUNT
+  );
+  moodRange.setValues(moodRows);
+  sheet.setColumnWidth(8, 140);
+  sheet.setColumnWidth(9, 80);
+
+  const chart = sheet.newChart()
+    .asPieChart()
+    .addRange(sheet.getRange(4, DASHBOARD.MOOD_START_COLUMN, moodRows.length + 1, DASHBOARD.MOOD_COLUMN_COUNT))
+    .setPosition(4, 11, 0, 0)
+    .setOption('title', 'Moods - Last 7 Days')
+    .setOption('pieHole', 0.35)
+    .build();
+  sheet.insertChart(chart);
+}
+
+function removeCharts_(sheet) {
+  sheet.getCharts().forEach(function(chart) {
+    sheet.removeChart(chart);
+  });
+}
+
+function buildDashboardTodoRows_(rows) {
+  return normalizeRowsForValues_(rows)
+    .filter(function(todo) {
+      return todo.todo_id && todo.task && !isDoneStatus_(todo.status);
+    })
+    .map(function(todo) {
+      return [
+        false,
+        todo.task,
+        todo.status || 'Open',
+        parseDate_(todo.due_date_optional) || '',
+        parseDate_(todo.created_at) || '',
+        todo.todo_id,
+      ];
+    });
+}
+
+function buildRecentMoodCounts_(rows, now, lookbackDays) {
+  const since = addDays_(now, -lookbackDays);
+  const counts = {};
+  normalizeRowsForValues_(rows).forEach(function(thought) {
+    const createdAt = parseDate_(thought.created_at);
+    if (!isRecent_(createdAt, since)) {
+      return;
+    }
+
+    String(thought.moods || '').split(',').forEach(function(rawMood) {
+      const mood = rawMood.trim().toLowerCase();
+      if (mood) {
+        counts[mood] = (counts[mood] || 0) + 1;
+      }
+    });
+  });
+  return counts;
+}
+
+function moodCountsToRows_(counts) {
+  return Object.keys(counts || {})
+    .sort(function(a, b) {
+      if (counts[b] !== counts[a]) {
+        return counts[b] - counts[a];
+      }
+      return a < b ? -1 : a > b ? 1 : 0;
+    })
+    .map(function(mood) {
+      return [mood, counts[mood]];
+    });
+}
+
+function normalizeRowsForValues_(rows) {
+  return normalizeArray_(rows).map(function(row) {
+    return row && row.values ? row.values : row;
+  });
+}
+
+function dashboardCheckboxStatus_(value) {
+  return value === true || String(value).toUpperCase() === 'TRUE' ? 'Done' : 'Open';
+}
+
+function updateTodoStatusById_(todosSheet, todoId, status) {
+  const headers = getHeaders_(todosSheet);
+  const idColumnIndex = headers.indexOf('todo_id');
+  const statusColumnIndex = headers.indexOf('status');
+  if (idColumnIndex === -1 || statusColumnIndex === -1 || todosSheet.getLastRow() < 2) {
+    return false;
+  }
+
+  const ids = todosSheet.getRange(2, idColumnIndex + 1, todosSheet.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i][0] === todoId) {
+      todosSheet.getRange(i + 2, statusColumnIndex + 1).setValue(status);
+      return true;
+    }
+  }
+  return false;
 }
 
 function sendDigest_(forceSend) {
@@ -986,6 +1195,11 @@ function formatDateForDigest_(value) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
+function formatDateTimeForDashboard_(value) {
+  const date = parseDate_(value) || new Date();
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+}
+
 function startOfDay_(date) {
   const copy = new Date(date.getTime());
   copy.setHours(0, 0, 0, 0);
@@ -1046,6 +1260,10 @@ if (typeof module !== 'undefined') {
     shouldRetryEntry_,
     shouldSendDigestOnDate_,
     isDoneStatus_,
+    buildDashboardTodoRows_,
+    buildRecentMoodCounts_,
+    moodCountsToRows_,
+    dashboardCheckboxStatus_,
     extractionSchema_,
     defaultExtractionPrompt_,
   };

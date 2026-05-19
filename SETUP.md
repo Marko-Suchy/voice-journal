@@ -34,6 +34,7 @@ Google will ask you to authorize the script. Approve the requested permissions s
 
 After the function finishes, the spreadsheet should contain these tabs:
 
+- `Dashboard`
 - `Entries`
 - `Goals`
 - `To-Dos`
@@ -101,10 +102,28 @@ Check the spreadsheet after it finishes:
 - `Entries` should contain the processed memo and transcript.
 - `Goals`, `To-Dos`, and `Thoughts` may contain extracted records depending on the memo content.
 - `Reminders` should contain linked reminder rows for extracted goals and to-dos.
+- `Dashboard` should refresh with active to-dos and the last 7 days of mood tags.
 
 If processing fails, check the `status`, `error`, and `retry_count` columns in `Entries`.
 
-## 7. Test The Digest
+## 7. Test The Dashboard
+
+After at least one to-do or thought has been added, run:
+
+```javascript
+refreshDashboardNow()
+```
+
+Confirm that:
+
+- Active to-dos appear on the `Dashboard` tab.
+- Checking a dashboard to-do updates the matching source row in `To-Dos` to `Done`.
+- Unchecking a dashboard to-do updates the matching source row in `To-Dos` to `Open`.
+- Mood tags from `Thoughts` rows created in the last 7 days appear in the mood summary table and pie chart.
+
+You can also refresh from the custom `Voice Journal > Refresh Dashboard` menu after reopening the spreadsheet.
+
+## 8. Test The Digest
 
 After at least one memo has been processed, run:
 
@@ -119,7 +138,7 @@ Confirm that the configured recipient receives an email. If no email arrives, ch
 - Gmail spam or filtering rules.
 - Whether Apps Script authorization was completed.
 
-## 8. Install Automation Triggers
+## 9. Install Automation Triggers
 
 To check the Drive inbox every 15 minutes, run:
 
@@ -135,7 +154,7 @@ installDailyDigestTrigger()
 
 The digest trigger runs daily at `DIGEST_SEND_HOUR`, then uses `DIGEST_FREQUENCY_PER_WEEK` to decide whether that day should send.
 
-## 9. Create An iPhone Shortcut
+## 10. Create An iPhone Shortcut
 
 Create a Shortcut that:
 
@@ -151,10 +170,11 @@ Voice Journal 2026-05-16 09-30.m4a
 
 The current script uses the Google Drive file ID for deduplication and the Drive file creation time for `uploaded_at`.
 
-## 10. Operating The Journal
+## 11. Operating The Journal
 
 Use the sheet as the review surface:
 
+- Use `Dashboard` for quick active to-do review and weekly mood trends.
 - Mark completed to-dos as `Done`, `Complete`, or `Archived`.
 - Mark completed goals as `Done`, `Complete`, or `Archived`.
 - Keep active goals as `Active`.
@@ -163,7 +183,7 @@ Use the sheet as the review surface:
 
 Reminder rows are updated after digests are sent. Completed or expired parent records become inactive in reminder logic.
 
-## 11. Local Tests
+## 12. Local Tests
 
 From the repository root, run:
 
@@ -182,5 +202,7 @@ If transcription fails, confirm that the OpenAI API key was stored with `setOpen
 If extraction fails, check the `EXTRACTION_MODEL` and `EXTRACTION_PROMPT` config values.
 
 If the digest does not send on a scheduled day, confirm `DIGEST_FREQUENCY_PER_WEEK`, `DIGEST_SEND_HOUR`, and the installed triggers in Apps Script.
+
+If the dashboard does not update, run `refreshDashboardNow()` manually and check that `To-Dos` has `todo_id`, `task`, and `status` values, and that `Thoughts` has `moods` and `created_at` values.
 
 If duplicate files appear, check whether the same audio was uploaded as separate Drive files. Deduplication is based on Google Drive file ID, not audio content.
