@@ -1,78 +1,91 @@
 # Voice Memo Journal System
 
-Lightweight Google Sheets + Google Apps Script system for turning voice memos into a searchable journal with derived Goals, To-Dos, and Thoughts tabs.
+Voice Memo Journal is a lightweight Google Sheets and Google Apps Script project for turning spoken voice memos into a searchable personal journal. It uses a Google Drive inbox folder, OpenAI transcription and extraction, and a Google Sheet as the review surface for entries, goals, to-dos, thoughts, reminders, and digest configuration.
 
-## What this includes
+For installation instructions, see [Setup.MD](Setup.MD).
+
+## Purpose
+
+The project is designed for fast voice capture. Instead of manually rewriting notes, tasks, and reflections after recording a memo, you upload audio files to a Drive folder and let the Apps Script pipeline process them into structured rows.
+
+The system is meant to help with:
+
+- Capturing journal entries from voice memos.
+- Extracting goals and to-dos from natural speech.
+- Saving larger reflections as tagged thoughts.
+- Creating reminder rows for active goals and open tasks.
+- Sending an email digest of active goals, relevant to-dos, and recent reflections.
+
+## Pipeline
+
+1. A voice memo is recorded on a phone.
+2. The audio file is uploaded into a configured Google Drive inbox folder.
+3. A Google Apps Script poller checks the folder every 15 minutes.
+4. New audio files are transcribed with the OpenAI transcription API.
+5. The transcript is sent to an OpenAI text model for structured extraction.
+6. The system writes the original entry and derived records into Google Sheet tabs.
+7. A scheduled digest email summarizes the active items and recent reflections.
+
+## Project Structure
 
 - `src/Code.js`: Google Apps Script implementation.
-- `test/voice_journal.test.js`: local mock tests for dedupe, extraction routing, and retry behavior.
-- Google Sheet tabs created by `setupVoiceJournalSheet()`:
-  - `Entries`
-  - `Goals`
-  - `To-Dos`
-  - `Thoughts`
-  - `Reminders`
-  - `Config`
+- `test/voice_journal.test.js`: Local mock tests for pure helper behavior.
+- `README.md`: High-level project overview.
+- `Setup.MD`: Detailed setup and operating instructions.
 
-## Setup
+## Google Sheet Tabs
 
-1. Create a Google Sheet.
-2. Open `Extensions > Apps Script`.
-3. Paste the contents of `src/Code.js` into the Apps Script editor.
-4. Run `setupVoiceJournalSheet()` once and authorize the script.
-5. In the `Config` tab, set `DRIVE_INBOX_FOLDER_ID` to the Google Drive folder where phone voice memos will be uploaded.
-6. In the `Config` tab, set `DIGEST_RECIPIENT_EMAIL` to the email address that should receive daily digests.
-7. In Apps Script, run:
+Running `setupVoiceJournalSheet()` creates and maintains these tabs:
 
-```javascript
-setOpenAiApiKey("your-api-key")
-```
+- `Entries`: One row per processed voice memo, including transcript, status, retry count, and error details.
+- `Goals`: Goal records extracted from transcripts.
+- `To-Dos`: Task records extracted from transcripts.
+- `Thoughts`: Reflection records with mood tags.
+- `Reminders`: Reminder rows linked to goals and to-dos.
+- `Config`: User-editable configuration values.
 
-The key is stored in Apps Script Script Properties, not in the sheet.
+## Review Workflow
 
-8. Run `processVoiceMemoInbox()` manually once to test voice memo processing.
-9. Run `sendDailyDigestNow()` manually once to test email delivery.
-10. Run `installVoiceMemoPoller()` to install a 15-minute voice memo poller.
-11. Run `installDailyDigestTrigger()` to install the daily digest trigger.
+Every processed memo creates one `Entries` row. Extracted goals, to-dos, and thoughts are linked back to that entry through `entry_id`.
 
-## iPhone Shortcut shape
+The `status` fields are intentionally simple. Values like `Open`, `Active`, `Done`, `Complete`, and `Archived` control what remains active in reminders and digests. Completed or archived goals and to-dos are ignored by future reminder logic.
 
-Create a Shortcut that:
+The `uploaded_at` value comes from the Google Drive file creation time. If the original device recording time matters, include it in the filename or transcript context.
 
-1. Records audio or receives a Voice Memo share sheet item.
-2. Saves the audio file to the configured Google Drive inbox folder.
-3. Uses a filename that includes the date/time, such as `Voice Journal 2026-05-16 09-30.m4a`.
+## Configuration
 
-The Apps Script poller will pick up new Drive files by file ID.
+The most important `Config` values are:
 
-## Review workflow
+- `DRIVE_INBOX_FOLDER_ID`: Google Drive folder where phone voice memos are uploaded.
+- `DIGEST_RECIPIENT_EMAIL`: Email address that receives journal digests.
+- `TRANSCRIPTION_MODEL`: OpenAI audio transcription model.
+- `EXTRACTION_MODEL`: OpenAI text model for structured extraction.
+- `DIGEST_FREQUENCY_PER_WEEK`: Number of digest days per week.
+- `DIGEST_SEND_HOUR`: Hour of day for scheduled digest delivery.
+- `DIGEST_LOOKBACK_DAYS`: Number of days included in recent thought and to-do review.
+- `MOOD_TAGS`: Allowed mood tags for extracted thoughts.
 
-- Every processed memo creates one row in `Entries`.
-- `uploaded_at` is the date the audio file was created in Google Drive, not necessarily the original device recording time.
-- Goals and to-dos create linked rows in `Reminders`.
-- Thoughts are extracted as big ideas from each entry and tagged with moods.
-- Use `status` values like `Open`, `Active`, `Done`, `Complete`, or `Archived` to control what stays active.
-- The email digest summarizes active goals, open/recent to-dos, and recent thought reflections.
+See [Setup.MD](Setup.MD) for the full setup flow.
 
-## Reminder and digest config
+## Local Tests
 
-Useful `Config` keys:
-
-- `DIGEST_RECIPIENT_EMAIL`: required before email can send.
-- `DIGEST_FREQUENCY_PER_WEEK`: default `7`; `5` means weekdays, `3` means Monday/Wednesday/Friday.
-- `DIGEST_SEND_HOUR`: default `8`.
-- `DIGEST_LOOKBACK_DAYS`: default `7`.
-- `DEFAULT_GOAL_ACTIVE_DAYS`: default `30`.
-- `DEFAULT_GOAL_REMINDER_FREQUENCY_DAYS`: default `7`.
-- `DEFAULT_TODO_REMINDER_FREQUENCY_DAYS`: default `3`.
-- `MOOD_TAGS`: allowed mood tags for extracted thoughts.
-
-## Local tests
-
-Run:
+Run the local mock tests with:
 
 ```bash
 node test/voice_journal.test.js
 ```
 
-These tests use mocks and do not call Google or OpenAI.
+These tests do not call Google or OpenAI services. They are intended to validate pure logic such as normalization, retry behavior, and digest scheduling rules.
+
+## Current Limitations
+
+- The Apps Script source is currently deployed by copying `src/Code.js` into a bound Apps Script project.
+- The pipeline does not archive processed audio files by default.
+- Date inference depends on transcript context and may be imperfect for phrases like "tomorrow" or "next week."
+- The digest is plain-text email, not an interactive dashboard.
+
+## Credits
+
+- Project concept and repository: Marko Suchy.
+- Implementation assistance: OpenAI ChatGPT/Codex.
+- Platform services: Google Sheets, Google Drive, Google Apps Script, and OpenAI APIs.
