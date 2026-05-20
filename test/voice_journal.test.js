@@ -1,11 +1,15 @@
 const assert = require('assert');
 
 const {
+  HEADERS,
+  SHEET_NAMES,
+  buildDigestFromRows_,
   buildDashboardGoalRows_,
   buildDashboardTodoRows_,
   buildRecentMoodCounts_,
   dashboardGoalActionStatus_,
   dashboardCheckboxStatus_,
+  fallbackDigestIntro_,
   moodCountsToRows_,
 } = require('../src/Code.js');
 
@@ -110,4 +114,122 @@ test('maps dashboard goal actions to source statuses', function() {
   assert.strictEqual(dashboardGoalActionStatus_('archive'), 'Archived');
   assert.strictEqual(dashboardGoalActionStatus_(''), '');
   assert.strictEqual(dashboardGoalActionStatus_('Active'), '');
+});
+
+test('digest reads reminder state from goals and to-dos', function() {
+  const now = new Date('2026-05-20T12:00:00Z');
+  const digest = buildDigestFromRows_(
+    [
+      {
+        rowNumber: 2,
+        values: {
+          goal_id: 'goal_1',
+          summary: 'Run a half marathon',
+          status: 'Active',
+          active_until: '2026-06-01',
+          reminder_frequency_days: 7,
+          next_reminder_at: '2026-05-20T10:00:00Z',
+          reminder_count: 2,
+        },
+      },
+      {
+        rowNumber: 3,
+        values: {
+          goal_id: 'goal_2',
+          summary: 'Read more',
+          status: 'Active',
+          active_until: '2026-06-01',
+          reminder_frequency_days: 7,
+          next_reminder_at: '2026-05-27T10:00:00Z',
+          reminder_count: 0,
+        },
+      },
+    ],
+    [
+      {
+        rowNumber: 2,
+        values: {
+          todo_id: 'todo_1',
+          task: 'Call Sam',
+          status: 'Open',
+          created_at: '2026-05-10T09:00:00Z',
+          due_date_optional: '',
+          reminder_frequency_days: 3,
+          next_reminder_at: '2026-05-20T09:00:00Z',
+          reminder_count: 1,
+        },
+      },
+      {
+        rowNumber: 3,
+        values: {
+          todo_id: 'todo_2',
+          task: 'Prep report',
+          status: 'Open',
+          created_at: '2026-05-01T09:00:00Z',
+          due_date_optional: '2026-05-23',
+          reminder_frequency_days: 3,
+          next_reminder_at: '2026-06-01T09:00:00Z',
+          reminder_count: 0,
+        },
+      },
+    ],
+    [
+      { values: { thought_id: 'thought_1', summary: 'Felt focused during planning', moods: 'focused', created_at: '2026-05-19T09:00:00Z' } },
+      { values: { thought_id: 'thought_2', summary: 'Old note', moods: 'tired', created_at: '2026-04-01T09:00:00Z' } },
+    ],
+    { DIGEST_LOOKBACK_DAYS: 7 },
+    now,
+    function() { throw new Error('intro failed'); }
+  );
+
+  assert.match(digest.body, /Today's digest includes 2 active goals, 2 to-dos, and 1 recent reflections\./);
+  assert.match(digest.body, /Run a half marathon through 2026-06-01 \[reminder due\]/);
+  assert.match(digest.body, /Read more through 2026-06-01\n/);
+  assert.match(digest.body, /Call Sam \[reminder due\]/);
+  assert.match(digest.body, /Prep report due 2026-05-23/);
+  assert.match(digest.body, /Felt focused during planning \[focused\]/);
+  assert.doesNotMatch(digest.body, /Old note/);
+
+  assert.strictEqual(digest.goalUpdates.length, 1);
+  assert.strictEqual(digest.goalUpdates[0].rowNumber, 2);
+  assert.strictEqual(digest.goalUpdates[0].values.reminder_count, 3);
+  assert.strictEqual(digest.goalUpdates[0].values.last_reminded_at, now);
+  assert.strictEqual(digest.goalUpdates[0].values.next_reminder_at.toISOString(), '2026-05-27T12:00:00.000Z');
+
+  assert.strictEqual(digest.todoUpdates.length, 1);
+  assert.strictEqual(digest.todoUpdates[0].rowNumber, 2);
+  assert.strictEqual(digest.todoUpdates[0].values.reminder_count, 2);
+  assert.strictEqual(digest.todoUpdates[0].values.next_reminder_at.toISOString(), '2026-05-23T12:00:00.000Z');
+});
+
+test('digest uses AI introduction when available', function() {
+  const digest = buildDigestFromRows_(
+    [],
+    [],
+    [],
+    { DIGEST_LOOKBACK_DAYS: 7 },
+    new Date('2026-05-20T12:00:00Z'),
+    function() { return 'A compact AI-written opening.'; }
+  );
+
+  assert.match(digest.body, /A compact AI-written opening\./);
+});
+
+test('fallback digest intro summarizes counts and moods', function() {
+  const intro = fallbackDigestIntro_({
+    goals: [{ summary: 'Goal' }],
+    todos: [{ task: 'Task' }, { task: 'Second task' }],
+    thoughts: [{ summary: 'Thought', moods: 'calm, focused' }],
+    moodCounts: { calm: 1, focused: 1 },
+  });
+
+  assert.match(intro, /1 active goals, 2 to-dos, and 1 recent reflections/);
+  assert.match(intro, /calm and focused|focused and calm/);
+});
+
+test('reminders table is no longer part of the configured schema', function() {
+  assert.strictEqual(SHEET_NAMES.REMINDERS, undefined);
+  assert.strictEqual(HEADERS.Reminders, undefined);
+  assert.ok(HEADERS.Goals.indexOf('next_reminder_at') !== -1);
+  assert.ok(HEADERS['To-Dos'].indexOf('last_reminded_at') !== -1);
 });

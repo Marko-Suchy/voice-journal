@@ -1,6 +1,6 @@
 # Voice Memo Journal System
 
-Voice Memo Journal is a lightweight Google Sheets and Google Apps Script project for turning spoken voice memos into a searchable personal journal. It uses a Google Drive inbox folder, OpenAI transcription and extraction, and a Google Sheet as the review surface for entries, goals, to-dos, thoughts, reminders, and digest configuration.
+Voice Memo Journal is a lightweight Google Sheets and Google Apps Script project for turning spoken voice memos into a searchable personal journal. It uses a Google Drive inbox folder, OpenAI transcription and extraction, and a Google Sheet as the review surface for entries, goals, to-dos, thoughts, and digest configuration.
 
 For installation instructions, see [SETUP.md](SETUP.md).
 
@@ -13,7 +13,7 @@ The system is meant to help with:
 - Capturing journal entries from voice memos.
 - Extracting goals and to-dos from natural speech.
 - Saving larger reflections as tagged thoughts.
-- Creating reminder rows for active goals and open tasks.
+- Tracking digest reminder state directly on active goals and open tasks.
 - Reviewing active goals, active to-dos, and recent mood trends in a Sheets-native dashboard.
 - Sending an email digest of active goals, relevant to-dos, and recent reflections.
 
@@ -29,8 +29,7 @@ The pipeline starts with an audio file in Google Drive and builds structured jou
 6. The transcript is sent to an OpenAI text model for structured extraction.
 7. The script writes one row to `Entries` for the processed Drive file.
 8. The script writes downstream rows to `Goals`, `To-Dos`, and `Thoughts` based on the extracted transcript content.
-9. The script writes reminder rows for extracted goals and to-dos.
-10. A scheduled digest email summarizes active goals, relevant to-dos, due reminders, and recent reflections.
+9. A scheduled digest email summarizes active goals, relevant to-dos, due reminders, and recent reflections.
 
 In short:
 
@@ -41,19 +40,15 @@ flowchart TD
     goals["Goals\nextracted from entry transcript"]
     todos["To-Dos\nextracted from entry transcript"]
     thoughts["Thoughts\nextracted from entry transcript"]
-    reminders["Reminders\ncreated from goals + to-dos"]
     digest["Email Digest\nactive items + recent reflections"]
 
     drive -->|"Drive file ID, URL, uploaded_at"| entries
     entries -->|"entry_id"| goals
     entries -->|"entry_id"| todos
     entries -->|"entry_id"| thoughts
-    goals -->|"goal_id"| reminders
-    todos -->|"todo_id"| reminders
     goals --> digest
     todos --> digest
     thoughts --> digest
-    reminders --> digest
 ```
 
 ## Data Model
@@ -64,7 +59,7 @@ The Google Drive audio file is the root object in the data model. The script use
 
 `Goals`, `To-Dos`, and `Thoughts` are downstream tables. They are not independent source records; they are derived from the transcript stored in `Entries`. Each row links back to its source entry with `entry_id`.
 
-`Reminders` is another downstream table. It is created from extracted goals and to-dos, then updated as digest emails are sent. Reminder rows link back to both the source entry and the specific goal or to-do that produced the reminder.
+Goals and to-dos carry their own digest reminder state, including when the next reminder is due, when it was last included as due, and how many reminder nudges have been sent. Thoughts remain stateless and are included by recency.
 
 `Config` is separate from the journal lineage. It stores user-controlled settings such as the Drive inbox folder, digest recipient, model names, reminder defaults, and mood tag list.
 
@@ -74,8 +69,6 @@ The core relationships are:
 - One `Entries` row can create zero or more `Goals` rows.
 - One `Entries` row can create zero or more `To-Dos` rows.
 - One `Entries` row can create zero or more `Thoughts` rows.
-- One `Goals` row can create one `Reminders` row.
-- One `To-Dos` row can create one `Reminders` row.
 - `Thoughts` rows do not create reminders by default.
 
 ## Project Structure
@@ -94,14 +87,13 @@ Running `setupVoiceJournalSheet()` creates and maintains these tabs:
 - `Goals`: Goal records extracted from transcripts.
 - `To-Dos`: Task records extracted from transcripts.
 - `Thoughts`: Reflection records with mood tags.
-- `Reminders`: Reminder rows linked to goals and to-dos.
 - `Config`: User-editable configuration values.
 
 ## Review Workflow
 
 Every processed memo creates one `Entries` row. Extracted goals, to-dos, and thoughts are linked back to that entry through `entry_id`.
 
-The `status` fields are intentionally simple. Values like `Open`, `Active`, `Done`, `Complete`, and `Archived` control what remains active in reminders and digests. Completed or archived goals and to-dos are ignored by future reminder logic.
+The `status` fields are intentionally simple. Values like `Open`, `Active`, `Done`, `Complete`, and `Archived` control what remains active in reminders and digests. Completed or archived goals and to-dos are ignored by future digest reminder logic.
 
 The `Dashboard` tab rebuilds from the source tables. It shows active to-dos with checkboxes that update the source `To-Dos.status` field, active goals with a `Complete` or `Archive` dropdown that updates `Goals.status`, plus a pie chart of mood tags from the last 7 days of `Thoughts`.
 

@@ -12,7 +12,6 @@ const SHEET_NAMES = {
   GOALS: 'Goals',
   TODOS: 'To-Dos',
   THOUGHTS: 'Thoughts',
-  REMINDERS: 'Reminders',
   CONFIG: 'Config',
 };
 
@@ -73,6 +72,9 @@ const HEADERS = {
     'created_at',
     'active_until',
     'reminder_frequency_days',
+    'next_reminder_at',
+    'last_reminded_at',
+    'reminder_count',
   ],
   'To-Dos': [
     'todo_id',
@@ -82,6 +84,9 @@ const HEADERS = {
     'created_at',
     'due_date_optional',
     'reminder_frequency_days',
+    'next_reminder_at',
+    'last_reminded_at',
+    'reminder_count',
   ],
   Thoughts: [
     'thought_id',
@@ -89,19 +94,6 @@ const HEADERS = {
     'summary',
     'moods',
     'created_at',
-  ],
-  Reminders: [
-    'reminder_id',
-    'source_type',
-    'source_id',
-    'entry_id',
-    'reminder_text',
-    'next_reminder_at',
-    'active_until',
-    'frequency_days',
-    'reminder_count',
-    'last_sent_at',
-    'status',
   ],
   Config: ['key', 'value', 'notes'],
 };
@@ -428,7 +420,6 @@ function appendExtractedRows_(spreadsheet, entryId, extraction, config) {
   const defaultGoalDays = parseInteger_(config.DEFAULT_GOAL_ACTIVE_DAYS, 30);
   const defaultGoalFrequency = parseInteger_(config.DEFAULT_GOAL_REMINDER_FREQUENCY_DAYS, 7);
   const defaultTodoFrequency = parseInteger_(config.DEFAULT_TODO_REMINDER_FREQUENCY_DAYS, 3);
-  const remindersSheet = spreadsheet.getSheetByName(SHEET_NAMES.REMINDERS);
 
   const goalsSheet = spreadsheet.getSheetByName(SHEET_NAMES.GOALS);
   extraction.goals.forEach(function(goal) {
@@ -443,15 +434,9 @@ function appendExtractedRows_(spreadsheet, entryId, extraction, config) {
       created_at: now,
       active_until: activeUntil,
       reminder_frequency_days: frequencyDays,
-    });
-    appendReminderRow_(remindersSheet, {
-      source_type: 'Goal',
-      source_id: goalId,
-      entry_id: entryId,
-      reminder_text: goal.summary,
       next_reminder_at: now,
-      active_until: activeUntil,
-      frequency_days: frequencyDays,
+      last_reminded_at: '',
+      reminder_count: 0,
     });
   });
 
@@ -468,15 +453,9 @@ function appendExtractedRows_(spreadsheet, entryId, extraction, config) {
       created_at: now,
       due_date_optional: dueDate || todo.due_date_optional || '',
       reminder_frequency_days: frequencyDays,
-    });
-    appendReminderRow_(remindersSheet, {
-      source_type: 'To-Do',
-      source_id: todoId,
-      entry_id: entryId,
-      reminder_text: todo.task,
       next_reminder_at: now,
-      active_until: dueDate || '',
-      frequency_days: frequencyDays,
+      last_reminded_at: '',
+      reminder_count: 0,
     });
   });
 
@@ -492,24 +471,8 @@ function appendExtractedRows_(spreadsheet, entryId, extraction, config) {
   });
 }
 
-function appendReminderRow_(remindersSheet, values) {
-  appendObjectRow_(remindersSheet, {
-    reminder_id: makeId_('reminder'),
-    source_type: values.source_type,
-    source_id: values.source_id,
-    entry_id: values.entry_id,
-    reminder_text: values.reminder_text,
-    next_reminder_at: values.next_reminder_at,
-    active_until: values.active_until || '',
-    frequency_days: values.frequency_days,
-    reminder_count: 0,
-    last_sent_at: '',
-    status: 'Active',
-  });
-}
-
 function removeDerivedRowsForEntry_(spreadsheet, entryId) {
-  [SHEET_NAMES.GOALS, SHEET_NAMES.TODOS, SHEET_NAMES.THOUGHTS, SHEET_NAMES.REMINDERS].forEach(function(sheetName) {
+  [SHEET_NAMES.GOALS, SHEET_NAMES.TODOS, SHEET_NAMES.THOUGHTS].forEach(function(sheetName) {
     const sheet = spreadsheet.getSheetByName(sheetName);
     deleteRowsWhereColumnEquals_(sheet, 'entry_id', entryId);
   });
@@ -786,87 +749,94 @@ function sendDigest_(forceSend) {
     subject: 'Voice Journal Digest - ' + formatDateForDigest_(now),
     body: digest.body,
   });
-  applyReminderUpdates_(spreadsheet.getSheetByName(SHEET_NAMES.REMINDERS), digest.reminderUpdates);
+  applyDigestStateUpdates_(spreadsheet, digest);
   return 'Sent digest to ' + recipient + '.';
 }
 
 function buildDigest_(spreadsheet, config, now) {
+  return buildDigestFromRows_(
+    getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS)),
+    getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS)),
+    getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.THOUGHTS)),
+    config,
+    now,
+    function(summary) {
+      return generateDigestIntro_(config, summary);
+    }
+  );
+}
+
+function buildDigestFromRows_(goalRows, todoRows, thoughtRows, config, now, introGenerator) {
   const lookbackDays = parseInteger_(config.DIGEST_LOOKBACK_DAYS, 7);
   const since = addDays_(now, -lookbackDays);
-  const goals = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS));
-  const todos = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS));
-  const thoughts = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.THOUGHTS));
-  const reminders = getRowsAsObjects_(spreadsheet.getSheetByName(SHEET_NAMES.REMINDERS));
-  const goalsById = indexRowsBy_(goals, 'goal_id');
-  const todosById = indexRowsBy_(todos, 'todo_id');
-  const reminderUpdates = [];
+  const goalUpdates = [];
+  const todoUpdates = [];
 
-  const dueReminders = reminders.filter(function(row) {
-    const reminder = row.values;
-    const parent = getReminderParent_(reminder, goalsById, todosById);
-    const activeUntil = parseDate_(reminder.active_until);
-    const nextReminderAt = parseDate_(reminder.next_reminder_at);
-    const parentInactive = !parent || isDoneStatus_(parent.status);
-    const expired = activeUntil && startOfDay_(activeUntil).getTime() < startOfDay_(now).getTime();
-
-    if (parentInactive || expired) {
-      reminderUpdates.push({ rowNumber: row.rowNumber, values: copyObject_(reminder, { status: 'Inactive' }) });
-      return false;
-    }
-
-    return String(reminder.status || '').toLowerCase() === 'active'
-      && nextReminderAt
-      && nextReminderAt.getTime() <= now.getTime();
-  });
-
-  const activeGoals = goals
-    .map(function(row) { return row.values; })
-    .filter(function(goal) {
-      const activeUntil = parseDate_(goal.active_until);
-      return !isDoneStatus_(goal.status)
+  const activeGoals = normalizeRowsForValues_(goalRows)
+    .map(function(goal, index) {
+      return { values: goal, rowNumber: goalRows[index] && goalRows[index].rowNumber };
+    })
+    .filter(function(row) {
+      const activeUntil = parseDate_(row.values.active_until);
+      return !isDoneStatus_(row.values.status)
         && (!activeUntil || startOfDay_(activeUntil).getTime() >= startOfDay_(now).getTime());
+    })
+    .map(function(row) {
+      const due = isReminderDue_(row.values, now);
+      if (due) {
+        goalUpdates.push(buildDigestStateUpdate_(row, now));
+      }
+      return copyObject_(row.values, { reminder_due: due });
     });
 
-  const openTodos = todos
-    .map(function(row) { return row.values; })
-    .filter(function(todo) {
+  const openTodos = normalizeRowsForValues_(todoRows)
+    .map(function(todo, index) {
+      return { values: todo, rowNumber: todoRows[index] && todoRows[index].rowNumber };
+    })
+    .filter(function(row) {
+      const todo = row.values;
       const createdAt = parseDate_(todo.created_at);
       const dueDate = parseDate_(todo.due_date_optional);
       return !isDoneStatus_(todo.status)
-        && (isRecent_(createdAt, since) || isDueSoon_(dueDate, now) || hasDueReminder_(dueReminders, 'To-Do', todo.todo_id));
+        && (isRecent_(createdAt, since) || isDueSoon_(dueDate, now) || isReminderDue_(todo, now));
+    })
+    .map(function(row) {
+      const due = isReminderDue_(row.values, now);
+      if (due) {
+        todoUpdates.push(buildDigestStateUpdate_(row, now));
+      }
+      return copyObject_(row.values, { reminder_due: due });
     });
 
-  const recentThoughts = thoughts
-    .map(function(row) { return row.values; })
+  const recentThoughts = normalizeRowsForValues_(thoughtRows)
     .filter(function(thought) {
       return isRecent_(parseDate_(thought.created_at), since);
     });
 
-  dueReminders.forEach(function(row) {
-    const reminder = row.values;
-    const frequencyDays = positiveInteger_(reminder.frequency_days, 1);
-    reminderUpdates.push({
-      rowNumber: row.rowNumber,
-      values: copyObject_(reminder, {
-        reminder_count: parseInteger_(reminder.reminder_count, 0) + 1,
-        last_sent_at: now,
-        next_reminder_at: addDays_(now, frequencyDays),
-        status: 'Active',
-      }),
-    });
-  });
+  const summary = {
+    goals: activeGoals,
+    todos: openTodos,
+    thoughts: recentThoughts,
+    moodCounts: countMoods_(recentThoughts),
+  };
+  const intro = buildDigestIntro_(summary, introGenerator);
 
   return {
-    body: renderDigestBody_(activeGoals, openTodos, recentThoughts, dueReminders, now, lookbackDays),
-    reminderUpdates: reminderUpdates,
+    body: renderDigestBody_(activeGoals, openTodos, recentThoughts, intro, now, lookbackDays),
+    goalUpdates: goalUpdates,
+    todoUpdates: todoUpdates,
   };
 }
 
-function renderDigestBody_(goals, todos, thoughts, dueReminders, now, lookbackDays) {
+function renderDigestBody_(goals, todos, thoughts, intro, now, lookbackDays) {
   const lines = [];
   lines.push('Voice Journal Digest');
   lines.push(formatDateForDigest_(now));
   lines.push('');
+  if (intro) {
+    lines.push(intro);
+    lines.push('');
+  }
 
   lines.push('Goals');
   if (goals.length === 0) {
@@ -874,7 +844,7 @@ function renderDigestBody_(goals, todos, thoughts, dueReminders, now, lookbackDa
   } else {
     goals.slice(0, 12).forEach(function(goal) {
       const activeUntil = goal.active_until ? ' through ' + formatDateForDigest_(goal.active_until) : '';
-      const dueNow = hasDueReminder_(dueReminders, 'Goal', goal.goal_id) ? ' [reminder due]' : '';
+      const dueNow = goal.reminder_due ? ' [reminder due]' : '';
       lines.push('- ' + goal.summary + activeUntil + dueNow);
     });
   }
@@ -886,7 +856,7 @@ function renderDigestBody_(goals, todos, thoughts, dueReminders, now, lookbackDa
   } else {
     todos.slice(0, 15).forEach(function(todo) {
       const due = todo.due_date_optional ? ' due ' + formatDateForDigest_(todo.due_date_optional) : '';
-      const dueNow = hasDueReminder_(dueReminders, 'To-Do', todo.todo_id) ? ' [reminder due]' : '';
+      const dueNow = todo.reminder_due ? ' [reminder due]' : '';
       lines.push('- ' + todo.task + due + dueNow);
     });
   }
@@ -913,26 +883,35 @@ function renderDigestBody_(goals, todos, thoughts, dueReminders, now, lookbackDa
   return lines.join('\n');
 }
 
-function applyReminderUpdates_(remindersSheet, reminderUpdates) {
-  reminderUpdates.forEach(function(update) {
-    writeObjectRow_(remindersSheet, update.rowNumber, update.values);
+function applyDigestStateUpdates_(spreadsheet, digest) {
+  applyObjectRowUpdates_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS), digest.goalUpdates);
+  applyObjectRowUpdates_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS), digest.todoUpdates);
+}
+
+function applyObjectRowUpdates_(sheet, updates) {
+  normalizeArray_(updates).forEach(function(update) {
+    if (update.rowNumber) {
+      writeObjectRow_(sheet, update.rowNumber, update.values);
+    }
   });
 }
 
-function getReminderParent_(reminder, goalsById, todosById) {
-  if (reminder.source_type === 'Goal') {
-    return goalsById[reminder.source_id];
-  }
-  if (reminder.source_type === 'To-Do') {
-    return todosById[reminder.source_id];
-  }
-  return null;
+function buildDigestStateUpdate_(row, now) {
+  const values = row.values;
+  const frequencyDays = positiveInteger_(values.reminder_frequency_days, 1);
+  return {
+    rowNumber: row.rowNumber,
+    values: copyObject_(values, {
+      reminder_count: parseInteger_(values.reminder_count, 0) + 1,
+      last_reminded_at: now,
+      next_reminder_at: addDays_(now, frequencyDays),
+    }),
+  };
 }
 
-function hasDueReminder_(dueReminders, sourceType, sourceId) {
-  return dueReminders.some(function(row) {
-    return row.values.source_type === sourceType && row.values.source_id === sourceId;
-  });
+function isReminderDue_(values, now) {
+  const nextReminderAt = parseDate_(values.next_reminder_at);
+  return !!nextReminderAt && nextReminderAt.getTime() <= now.getTime();
 }
 
 function countMoods_(thoughts) {
@@ -948,14 +927,87 @@ function countMoods_(thoughts) {
   return counts;
 }
 
-function indexRowsBy_(rows, key) {
-  const index = {};
-  rows.forEach(function(row) {
-    if (row.values[key]) {
-      index[row.values[key]] = row.values;
+function buildDigestIntro_(summary, introGenerator) {
+  try {
+    if (introGenerator) {
+      const intro = sanitizeDigestIntro_(introGenerator(summary));
+      if (intro) {
+        return intro;
+      }
     }
+  } catch (error) {
+    // Digest delivery should not depend on the optional AI introduction.
+  }
+  return fallbackDigestIntro_(summary);
+}
+
+function generateDigestIntro_(config, summary) {
+  const apiKey = getOpenAiApiKey_(config);
+  const response = UrlFetchApp.fetch('https://api.openai.com/v1/responses', {
+    method: 'post',
+    contentType: 'application/json',
+    muteHttpExceptions: true,
+    headers: {
+      Authorization: 'Bearer ' + apiKey,
+    },
+    payload: JSON.stringify({
+      model: config.EXTRACTION_MODEL || 'gpt-5.2',
+      input: [
+        {
+          role: 'system',
+          content: 'Write a warm, concise one- or two-sentence introduction for a personal voice journal email digest. Do not add bullets, markdown, or advice.',
+        },
+        {
+          role: 'user',
+          content: digestIntroPrompt_(summary),
+        },
+      ],
+    }),
   });
-  return index;
+
+  const code = response.getResponseCode();
+  const body = response.getContentText();
+  if (code < 200 || code >= 300) {
+    throw new Error('Digest intro failed with HTTP ' + code + ': ' + body);
+  }
+
+  const parsed = JSON.parse(body);
+  return parsed.output_text || findOutputText_(parsed);
+}
+
+function digestIntroPrompt_(summary) {
+  const goals = normalizeArray_(summary.goals).slice(0, 8).map(function(goal) { return goal.summary; }).filter(Boolean);
+  const todos = normalizeArray_(summary.todos).slice(0, 10).map(function(todo) { return todo.task; }).filter(Boolean);
+  const thoughts = normalizeArray_(summary.thoughts).slice(0, 8).map(function(thought) { return thought.summary; }).filter(Boolean);
+  const moods = moodCountsToRows_(summary.moodCounts || {}).slice(0, 5).map(function(row) {
+    return row[0] + ' (' + row[1] + ')';
+  });
+
+  return [
+    'Active goals: ' + (goals.join('; ') || 'none'),
+    'To-dos: ' + (todos.join('; ') || 'none'),
+    'Recent reflections: ' + (thoughts.join('; ') || 'none'),
+    'Mood counts: ' + (moods.join(', ') || 'none'),
+  ].join('\n');
+}
+
+function sanitizeDigestIntro_(intro) {
+  const clean = String(intro || '').replace(/\s+/g, ' ').trim();
+  return clean.length > 500 ? clean.slice(0, 497) + '...' : clean;
+}
+
+function fallbackDigestIntro_(summary) {
+  const goals = normalizeArray_(summary.goals);
+  const todos = normalizeArray_(summary.todos);
+  const thoughts = normalizeArray_(summary.thoughts);
+  const moodRows = moodCountsToRows_(summary.moodCounts || {});
+  const leadingMoods = moodRows.slice(0, 2).map(function(row) { return row[0]; });
+  const moodSentence = leadingMoods.length > 0
+    ? ' The most common moods were ' + leadingMoods.join(' and ') + '.'
+    : '';
+  return 'Today\'s digest includes ' + goals.length + ' active goals, '
+    + todos.length + ' to-dos, and ' + thoughts.length + ' recent reflections.'
+    + moodSentence;
 }
 
 function deleteRowsWhereColumnEquals_(sheet, headerName, expectedValue) {
@@ -1314,6 +1366,9 @@ function parseDate_(value) {
 
 function formatDateForDigest_(value) {
   const date = parseDate_(value) || new Date();
+  if (typeof Utilities === 'undefined' || typeof Session === 'undefined') {
+    return date.toISOString().slice(0, 10);
+  }
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
@@ -1382,6 +1437,8 @@ if (typeof module !== 'undefined') {
     shouldRetryEntry_,
     shouldSendDigestOnDate_,
     isDoneStatus_,
+    buildDigestFromRows_,
+    fallbackDigestIntro_,
     buildDashboardTodoRows_,
     buildDashboardGoalRows_,
     buildRecentMoodCounts_,

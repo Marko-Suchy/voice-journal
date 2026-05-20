@@ -39,7 +39,6 @@ After the function finishes, the spreadsheet should contain these tabs:
 - `Goals`
 - `To-Dos`
 - `Thoughts`
-- `Reminders`
 - `Config`
 
 ## 3. Create The Drive Inbox Folder
@@ -101,7 +100,6 @@ Check the spreadsheet after it finishes:
 
 - `Entries` should contain the processed memo and transcript.
 - `Goals`, `To-Dos`, and `Thoughts` may contain extracted records depending on the memo content.
-- `Reminders` should contain linked reminder rows for extracted goals and to-dos.
 - `Dashboard` should refresh with active goals, active to-dos, and the last 7 days of mood tags.
 
 If processing fails, check the `status`, `error`, and `retry_count` columns in `Entries`.
@@ -183,7 +181,7 @@ Use the sheet as the review surface:
 - Keep pending to-dos as `Open`.
 - Review mood tags and reflection summaries in `Thoughts`.
 
-Reminder rows are updated after digests are sent. Completed or expired parent records become inactive in reminder logic.
+Goals and to-dos update their own reminder state after digests are sent. Completed or expired records stop appearing as active digest reminders.
 
 ## 12. Local Tests
 
