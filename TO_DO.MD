@@ -8,7 +8,7 @@
 
 ### Updates/Refinements:
 * Better initialize width & wrap settings for free-text fields in all facts tables.
-* Refine email digest formatting, so that it is more appealing to engage with.
+* Refine email digest formatting & content.
 * Add some extra negative words to the moods list.
 * Upadate ReadME so it's cleaner, and less AI sloppy!
 * Get rid of the reminders table, which is currently pretty much unnecesary model slop.
