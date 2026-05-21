@@ -41,6 +41,8 @@ After the function finishes, the spreadsheet should contain these tabs:
 - `Thoughts`
 - `Config`
 
+`Dashboard` is moved to the leftmost tab. The source tables are formatted with wider wrapped text columns, and the `Config` tab includes quick-action buttons for installing the inbox poller and updating the dashboard.
+
 ## 3. Create The Drive Inbox Folder
 
 1. Create a folder in Google Drive for incoming voice memos.
@@ -122,6 +124,7 @@ Confirm that:
 - Mood tags from `Thoughts` rows created in the last 7 days appear in the mood summary table and pie chart.
 
 You can also refresh from the custom `Voice Journal > Refresh Dashboard` menu after reopening the spreadsheet.
+The `Config` tab also has an `Update Dashboard` quick-action button.
 
 ## 8. Test The Digest
 
@@ -145,6 +148,8 @@ To check the Drive inbox every 15 minutes, run:
 ```javascript
 installVoiceMemoPoller()
 ```
+
+You can also use the `Install Poller` quick-action button on the `Config` tab.
 
 To send scheduled digest emails, run:
 

@@ -82,12 +82,12 @@ The core relationships are:
 
 Running `setupVoiceJournalSheet()` creates and maintains these tabs:
 
-- `Dashboard`: Interactive review surface with active goals, active to-dos, and a 7-day moods chart.
+- `Dashboard`: Leftmost interactive review surface with active goals, active to-dos, and a 7-day moods chart.
 - `Entries`: One row per processed voice memo, including transcript, status, retry count, and error details.
 - `Goals`: Goal records extracted from transcripts.
 - `To-Dos`: Task records extracted from transcripts.
 - `Thoughts`: Reflection records with mood tags.
-- `Config`: User-editable configuration values.
+- `Config`: User-editable configuration values and quick-action buttons.
 
 ## Review Workflow
 
@@ -95,7 +95,7 @@ Every processed memo creates one `Entries` row. Extracted goals, to-dos, and tho
 
 The `status` fields are intentionally simple. Values like `Open`, `Active`, `Done`, `Complete`, and `Archived` control what remains active in reminders and digests. Completed or archived goals and to-dos are ignored by future digest reminder logic.
 
-The `Dashboard` tab rebuilds from the source tables. It shows active to-dos with checkboxes that update the source `To-Dos.status` field, active goals with a `Complete` or `Archive` dropdown that updates `Goals.status`, plus a pie chart of mood tags from the last 7 days of `Thoughts`.
+The `Dashboard` tab rebuilds from the source tables. It shows active to-dos with checkboxes that update the source `To-Dos.status` field, active goals with a `Complete` or `Archive` dropdown that updates `Goals.status`, plus a pie chart of mood tags from the last 7 days of `Thoughts`. Goal status edits do not automatically reload the dashboard, so the sheet does not jump while you are reviewing it.
 
 The `uploaded_at` value comes from the Google Drive file creation time. If the original device recording time matters, include it in the filename or transcript context.
 

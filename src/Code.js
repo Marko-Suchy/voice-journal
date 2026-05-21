@@ -49,6 +49,23 @@ const DASHBOARD = {
   MOOD_LOOKBACK_DAYS: 7,
 };
 
+const CONFIG_BUTTONS = [
+  {
+    title: 'Install Poller',
+    script: 'installPollerFromConfigButton',
+    row: 2,
+    column: 5,
+    color: '#1a73e8',
+  },
+  {
+    title: 'Update Dashboard',
+    script: 'refreshDashboardFromConfigButton',
+    row: 5,
+    column: 5,
+    color: '#188038',
+  },
+];
+
 const HEADERS = {
   Entries: [
     'entry_id',
@@ -139,8 +156,130 @@ function setupVoiceJournalSheet() {
     ensureHeaders_(sheet, HEADERS[sheetName]);
     sheet.setFrozenRows(1);
   });
-  getOrCreateSheet_(spreadsheet, SHEET_NAMES.DASHBOARD);
-  seedConfigDefaults_(spreadsheet.getSheetByName(SHEET_NAMES.CONFIG));
+  const dashboardSheet = getOrCreateSheet_(spreadsheet, SHEET_NAMES.DASHBOARD);
+  moveSheetToFront_(spreadsheet, dashboardSheet);
+  const configSheet = spreadsheet.getSheetByName(SHEET_NAMES.CONFIG);
+  seedConfigDefaults_(configSheet);
+  formatWorkbookSheets_(spreadsheet);
+  renderConfigControls_(configSheet);
+}
+
+function moveSheetToFront_(spreadsheet, sheet) {
+  spreadsheet.setActiveSheet(sheet);
+  spreadsheet.moveActiveSheet(1);
+}
+
+function formatWorkbookSheets_(spreadsheet) {
+  formatSheetColumns_(spreadsheet.getSheetByName(SHEET_NAMES.ENTRIES), {
+    drive_file_id: 180,
+    audio_url: 260,
+    uploaded_at: 150,
+    processed_at: 150,
+    transcript: 900,
+    error: 420,
+  }, ['transcript', 'error']);
+  formatSheetColumns_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS), {
+    summary: 460,
+    created_at: 140,
+    active_until: 130,
+    next_reminder_at: 160,
+    last_reminded_at: 160,
+  }, ['summary']);
+  formatSheetColumns_(spreadsheet.getSheetByName(SHEET_NAMES.TODOS), {
+    task: 460,
+    created_at: 140,
+    due_date_optional: 130,
+    next_reminder_at: 160,
+    last_reminded_at: 160,
+  }, ['task']);
+  formatSheetColumns_(spreadsheet.getSheetByName(SHEET_NAMES.THOUGHTS), {
+    summary: 560,
+    moods: 220,
+    created_at: 140,
+  }, ['summary', 'moods']);
+  formatSheetColumns_(spreadsheet.getSheetByName(SHEET_NAMES.CONFIG), {
+    key: 280,
+    value: 420,
+    notes: 560,
+  }, ['value', 'notes']);
+}
+
+function formatSheetColumns_(sheet, widthsByHeader, wrapHeaders) {
+  if (!sheet) {
+    return;
+  }
+  const headers = getHeaders_(sheet);
+  headers.forEach(function(header, index) {
+    const column = index + 1;
+    if (widthsByHeader[header]) {
+      sheet.setColumnWidth(column, widthsByHeader[header]);
+    }
+    if (wrapHeaders.indexOf(header) !== -1) {
+      sheet.getRange(1, column, sheet.getMaxRows(), 1).setWrap(true).setVerticalAlignment('top');
+    }
+  });
+  sheet.getRange(1, 1, sheet.getMaxRows(), Math.max(headers.length, 1)).setVerticalAlignment('top');
+}
+
+function renderConfigControls_(configSheet) {
+  const titleRange = configSheet.getRange('E1:F1');
+  if (!titleRange.isPartOfMerge()) {
+    titleRange.merge();
+  }
+  titleRange.setValue('Quick Actions').setFontWeight('bold').setBackground('#f1f3f4');
+  CONFIG_BUTTONS.forEach(function(button) {
+    renderConfigButtonFallback_(configSheet, button);
+  });
+  removeConfigButtonImages_(configSheet);
+  CONFIG_BUTTONS.forEach(function(button) {
+    try {
+      insertConfigButtonImage_(configSheet, button);
+    } catch (error) {
+      configSheet.getRange(button.row, button.column).setNote(
+        'Could not create the image button automatically. Use the Voice Journal menu for this action.'
+      );
+    }
+  });
+}
+
+function renderConfigButtonFallback_(sheet, button) {
+  const range = sheet.getRange(button.row, button.column, 2, 2);
+  if (!range.isPartOfMerge()) {
+    range.merge();
+  }
+  range
+    .setValue(button.title)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setFontWeight('bold')
+    .setFontColor('#ffffff')
+    .setBackground(button.color)
+    .setNote('If the image button does not appear, use the Voice Journal menu for this action.');
+  sheet.setColumnWidth(button.column, 150);
+  sheet.setColumnWidth(button.column + 1, 150);
+  sheet.setRowHeight(button.row, 34);
+  sheet.setRowHeight(button.row + 1, 10);
+}
+
+function removeConfigButtonImages_(sheet) {
+  sheet.getImages().forEach(function(image) {
+    const title = image.getAltTextTitle && image.getAltTextTitle();
+    if (String(title || '').indexOf('Voice Journal:') === 0) {
+      image.remove();
+    }
+  });
+}
+
+function insertConfigButtonImage_(sheet, button) {
+  const transparentPixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+  const blob = Utilities.newBlob(Utilities.base64Decode(transparentPixel), 'image/png', button.title + '.png');
+  const image = sheet.insertImage(blob, button.column, button.row);
+  image
+    .setAltTextTitle('Voice Journal: ' + button.title)
+    .setAltTextDescription('Runs ' + button.script)
+    .assignScript(button.script)
+    .setWidth(220)
+    .setHeight(44);
 }
 
 function refreshDashboardNow() {
@@ -198,8 +337,18 @@ function handleDashboardGoalEdit_(spreadsheet, sheet, e) {
   }
 
   updateGoalStatusById_(spreadsheet.getSheetByName(SHEET_NAMES.GOALS), goalId, nextStatus);
-  refreshDashboard_(spreadsheet, new Date());
+  sheet.getRange(e.range.getRow(), DASHBOARD.GOAL_START_COLUMN + 2).setValue(nextStatus);
   return true;
+}
+
+function installPollerFromConfigButton() {
+  installVoiceMemoPoller();
+  SpreadsheetApp.getActiveSpreadsheet().toast('Voice memo poller installed.', 'Voice Journal', 5);
+}
+
+function refreshDashboardFromConfigButton() {
+  refreshDashboardNow();
+  SpreadsheetApp.getActiveSpreadsheet().toast('Dashboard refreshed.', 'Voice Journal', 5);
 }
 
 function setOpenAiApiKey(apiKey) {
