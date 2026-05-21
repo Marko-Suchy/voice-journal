@@ -97,7 +97,7 @@ The `status` fields are intentionally simple. Values like `Open`, `Active`, `Don
 
 The `Dashboard` tab rebuilds from the source tables. It shows active to-dos with checkboxes that update the source `To-Dos.status` field, active goals with a `Complete` or `Archive` dropdown that updates `Goals.status`, plus a pie chart of mood tags from the last 7 days of `Thoughts`. Goal status edits do not automatically reload the dashboard, so the sheet does not jump while you are reviewing it.
 
-The `uploaded_at` value comes from the Google Drive file creation time. If the original device recording time matters, include it in the filename or transcript context.
+The `uploaded_at` value comes from the Google Drive file's last-updated time. Extracted goals, to-dos, and thoughts use that same Drive timestamp for `created_at`, while `processed_at` records when the journal processed the file.
 
 ## Configuration
 

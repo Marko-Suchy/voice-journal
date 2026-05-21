@@ -436,6 +436,7 @@ function processVoiceMemoInbox() {
     const retryCount = existingEntry
       ? parseInteger_(existingEntry.values.retry_count, 0)
       : 0;
+    const sourceTimestamp = getDriveSourceTimestamp_(file);
 
     try {
       const result = processVoiceMemoFile_(file, entryId, config);
@@ -443,7 +444,7 @@ function processVoiceMemoInbox() {
         entry_id: entryId,
         drive_file_id: driveFileId,
         audio_url: file.getUrl(),
-        uploaded_at: file.getDateCreated(),
+        uploaded_at: sourceTimestamp,
         processed_at: new Date(),
         transcript: result.transcript,
         has_goal: result.extraction.goals.length > 0,
@@ -455,7 +456,7 @@ function processVoiceMemoInbox() {
       });
 
       removeDerivedRowsForEntry_(spreadsheet, entryId);
-      appendExtractedRows_(spreadsheet, entryId, result.extraction, config);
+      appendExtractedRows_(spreadsheet, entryId, result.extraction, config, sourceTimestamp);
       existing[driveFileId] = {
         rowNumber: existingEntry ? existingEntry.rowNumber : entriesSheet.getLastRow(),
         values: { drive_file_id: driveFileId, entry_id: entryId, status: 'Processed', retry_count: retryCount },
@@ -465,7 +466,7 @@ function processVoiceMemoInbox() {
         entry_id: entryId,
         drive_file_id: driveFileId,
         audio_url: file.getUrl(),
-        uploaded_at: file.getDateCreated(),
+        uploaded_at: sourceTimestamp,
         processed_at: new Date(),
         transcript: existingEntry ? existingEntry.values.transcript : '',
         has_goal: false,
@@ -478,6 +479,10 @@ function processVoiceMemoInbox() {
     }
   }
   refreshDashboard_(spreadsheet, new Date());
+}
+
+function getDriveSourceTimestamp_(file) {
+  return file.getLastUpdated ? file.getLastUpdated() : file.getDateCreated();
 }
 
 function processVoiceMemoFile_(file, entryId, config) {
@@ -562,8 +567,8 @@ function extractJournalItems_(transcript, entryId, config) {
   return normalizeExtraction_(JSON.parse(outputText));
 }
 
-function appendExtractedRows_(spreadsheet, entryId, extraction, config) {
-  const now = new Date();
+function appendExtractedRows_(spreadsheet, entryId, extraction, config, sourceTimestamp) {
+  const now = sourceTimestamp || new Date();
   const todoStatus = config.DEFAULT_TODO_STATUS || 'Open';
   const goalStatus = config.DEFAULT_GOAL_STATUS || 'Active';
   const defaultGoalDays = parseInteger_(config.DEFAULT_GOAL_ACTIVE_DAYS, 30);

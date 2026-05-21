@@ -173,7 +173,7 @@ Example filename:
 Voice Journal 2026-05-16 09-30.m4a
 ```
 
-The current script uses the Google Drive file ID for deduplication and the Drive file creation time for `uploaded_at`.
+The current script uses the Google Drive file ID for deduplication and the Drive file last-updated time for `uploaded_at` and extracted fact `created_at` values.
 
 ## 11. Operating The Journal
 
