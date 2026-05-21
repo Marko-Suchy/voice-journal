@@ -748,6 +748,7 @@ function sendDigest_(forceSend) {
     to: recipient,
     subject: 'Voice Journal Digest - ' + formatDateForDigest_(now),
     body: digest.body,
+    htmlBody: digest.htmlBody,
   });
   applyDigestStateUpdates_(spreadsheet, digest);
   return 'Sent digest to ' + recipient + '.';
@@ -761,12 +762,12 @@ function buildDigest_(spreadsheet, config, now) {
     config,
     now,
     function(summary) {
-      return generateDigestIntro_(config, summary);
+      return generateDigestNarrative_(config, summary);
     }
   );
 }
 
-function buildDigestFromRows_(goalRows, todoRows, thoughtRows, config, now, introGenerator) {
+function buildDigestFromRows_(goalRows, todoRows, thoughtRows, config, now, narrativeGenerator) {
   const lookbackDays = parseInteger_(config.DIGEST_LOOKBACK_DAYS, 7);
   const since = addDays_(now, -lookbackDays);
   const goalUpdates = [];
@@ -819,52 +820,62 @@ function buildDigestFromRows_(goalRows, todoRows, thoughtRows, config, now, intr
     thoughts: recentThoughts,
     moodCounts: countMoods_(recentThoughts),
   };
-  const intro = buildDigestIntro_(summary, introGenerator);
+  const narrative = buildDigestNarrative_(summary, narrativeGenerator);
 
   return {
-    body: renderDigestBody_(activeGoals, openTodos, recentThoughts, intro, now, lookbackDays),
+    body: renderDigestTextBody_(activeGoals, openTodos, recentThoughts, narrative, now, lookbackDays),
+    htmlBody: renderDigestHtmlBody_(activeGoals, openTodos, recentThoughts, narrative, now, lookbackDays),
     goalUpdates: goalUpdates,
     todoUpdates: todoUpdates,
   };
 }
 
-function renderDigestBody_(goals, todos, thoughts, intro, now, lookbackDays) {
+function renderDigestTextBody_(goals, todos, thoughts, narrative, now, lookbackDays) {
   const lines = [];
   lines.push('Voice Journal Digest');
   lines.push(formatDateForDigest_(now));
   lines.push('');
-  if (intro) {
-    lines.push(intro);
+  if (narrative.intro) {
+    lines.push(narrative.intro);
     lines.push('');
   }
 
-  lines.push('Goals');
+  lines.push('__Goals__');
+  if (narrative.goalsSummary) {
+    lines.push(narrative.goalsSummary);
+  }
   if (goals.length === 0) {
-    lines.push('- No active goals.');
+    lines.push('  1. No active goals.');
   } else {
-    goals.slice(0, 12).forEach(function(goal) {
+    goals.slice(0, 12).forEach(function(goal, index) {
       const activeUntil = goal.active_until ? ' through ' + formatDateForDigest_(goal.active_until) : '';
       const dueNow = goal.reminder_due ? ' [reminder due]' : '';
-      lines.push('- ' + goal.summary + activeUntil + dueNow);
+      lines.push('  ' + (index + 1) + '. ' + goal.summary + activeUntil + dueNow);
     });
   }
   lines.push('');
 
-  lines.push('To-Dos');
+  lines.push('__To-Dos__');
+  if (narrative.todosSummary) {
+    lines.push(narrative.todosSummary);
+  }
   if (todos.length === 0) {
-    lines.push('- No open to-dos needing attention.');
+    lines.push('  1. No open to-dos needing attention.');
   } else {
-    todos.slice(0, 15).forEach(function(todo) {
+    todos.slice(0, 15).forEach(function(todo, index) {
       const due = todo.due_date_optional ? ' due ' + formatDateForDigest_(todo.due_date_optional) : '';
       const dueNow = todo.reminder_due ? ' [reminder due]' : '';
-      lines.push('- ' + todo.task + due + dueNow);
+      lines.push('  ' + (index + 1) + '. ' + todo.task + due + dueNow);
     });
   }
   lines.push('');
 
-  lines.push('Reflections');
+  lines.push('__Thoughts__');
+  if (narrative.thoughtsSummary) {
+    lines.push(narrative.thoughtsSummary);
+  }
   if (thoughts.length === 0) {
-    lines.push('- No recent thoughts from the last ' + lookbackDays + ' days.');
+    lines.push('  1. No recent thoughts from the last ' + lookbackDays + ' days.');
   } else {
     const moodCounts = countMoods_(thoughts);
     const moodSummary = Object.keys(moodCounts)
@@ -874,13 +885,69 @@ function renderDigestBody_(goals, todos, thoughts, intro, now, lookbackDays) {
     if (moodSummary) {
       lines.push('Mood tags: ' + moodSummary);
     }
-    thoughts.slice(0, 10).forEach(function(thought) {
+    thoughts.slice(0, 10).forEach(function(thought, index) {
       const moods = thought.moods ? ' [' + thought.moods + ']' : '';
-      lines.push('- ' + thought.summary + moods);
+      lines.push('  ' + (index + 1) + '. ' + thought.summary + moods);
     });
   }
 
   return lines.join('\n');
+}
+
+function renderDigestHtmlBody_(goals, todos, thoughts, narrative, now, lookbackDays) {
+  return [
+    '<div style="font-family:Arial,sans-serif;line-height:1.45;color:#202124;">',
+    '<h2 style="margin:0 0 4px 0;">Voice Journal Digest</h2>',
+    '<p style="margin:0 0 16px 0;color:#5f6368;">' + escapeHtml_(formatDateForDigest_(now)) + '</p>',
+    narrative.intro ? '<p>' + escapeHtml_(narrative.intro) + '</p>' : '',
+    renderDigestHtmlSection_('Goals', narrative.goalsSummary, goals.slice(0, 12), function(goal) {
+      const activeUntil = goal.active_until ? ' through ' + formatDateForDigest_(goal.active_until) : '';
+      const dueNow = goal.reminder_due ? ' [reminder due]' : '';
+      return goal.summary + activeUntil + dueNow;
+    }, 'No active goals.'),
+    renderDigestHtmlSection_('To-Dos', narrative.todosSummary, todos.slice(0, 15), function(todo) {
+      const due = todo.due_date_optional ? ' due ' + formatDateForDigest_(todo.due_date_optional) : '';
+      const dueNow = todo.reminder_due ? ' [reminder due]' : '';
+      return todo.task + due + dueNow;
+    }, 'No open to-dos needing attention.'),
+    renderDigestHtmlThoughtsSection_(thoughts.slice(0, 10), narrative.thoughtsSummary, lookbackDays),
+    '</div>',
+  ].join('');
+}
+
+function renderDigestHtmlSection_(title, summary, items, itemText, emptyText) {
+  const itemHtml = items.length === 0
+    ? '<li>' + escapeHtml_(emptyText) + '</li>'
+    : items.map(function(item) { return '<li>' + escapeHtml_(itemText(item)) + '</li>'; }).join('');
+  return [
+    '<p style="margin:20px 0 4px 0;"><strong><u>' + escapeHtml_(title) + '</u></strong></p>',
+    summary ? '<p style="margin:0 0 8px 0;">' + escapeHtml_(summary) + '</p>' : '',
+    '<ol style="margin:0 0 0 24px;padding-left:18px;">',
+    itemHtml,
+    '</ol>',
+  ].join('');
+}
+
+function renderDigestHtmlThoughtsSection_(thoughts, summary, lookbackDays) {
+  const moodCounts = countMoods_(thoughts);
+  const moodSummary = Object.keys(moodCounts)
+    .sort(function(a, b) { return moodCounts[b] - moodCounts[a]; })
+    .map(function(mood) { return mood + ' (' + moodCounts[mood] + ')'; })
+    .join(', ');
+  const items = thoughts.length === 0
+    ? ['No recent thoughts from the last ' + lookbackDays + ' days.']
+    : thoughts.map(function(thought) {
+      const moods = thought.moods ? ' [' + thought.moods + ']' : '';
+      return thought.summary + moods;
+    });
+  return [
+    '<p style="margin:20px 0 4px 0;"><strong><u>Thoughts</u></strong></p>',
+    summary ? '<p style="margin:0 0 8px 0;">' + escapeHtml_(summary) + '</p>' : '',
+    moodSummary ? '<p style="margin:0 0 8px 0;">Mood tags: ' + escapeHtml_(moodSummary) + '</p>' : '',
+    '<ol style="margin:0 0 0 24px;padding-left:18px;">',
+    items.map(function(item) { return '<li>' + escapeHtml_(item) + '</li>'; }).join(''),
+    '</ol>',
+  ].join('');
 }
 
 function applyDigestStateUpdates_(spreadsheet, digest) {
@@ -927,21 +994,21 @@ function countMoods_(thoughts) {
   return counts;
 }
 
-function buildDigestIntro_(summary, introGenerator) {
+function buildDigestNarrative_(summary, narrativeGenerator) {
   try {
-    if (introGenerator) {
-      const intro = sanitizeDigestIntro_(introGenerator(summary));
-      if (intro) {
-        return intro;
+    if (narrativeGenerator) {
+      const narrative = sanitizeDigestNarrative_(narrativeGenerator(summary));
+      if (narrative.intro || narrative.goalsSummary || narrative.todosSummary || narrative.thoughtsSummary) {
+        return narrative;
       }
     }
   } catch (error) {
-    // Digest delivery should not depend on the optional AI introduction.
+    // Digest delivery should not depend on optional AI narrative.
   }
-  return fallbackDigestIntro_(summary);
+  return fallbackDigestNarrative_(summary);
 }
 
-function generateDigestIntro_(config, summary) {
+function generateDigestNarrative_(config, summary) {
   const apiKey = getOpenAiApiKey_(config);
   const response = UrlFetchApp.fetch('https://api.openai.com/v1/responses', {
     method: 'post',
@@ -955,13 +1022,30 @@ function generateDigestIntro_(config, summary) {
       input: [
         {
           role: 'system',
-          content: 'Write a warm, concise one- or two-sentence introduction for a personal voice journal email digest. Do not add bullets, markdown, or advice.',
+          content: [
+            'Write concise narrative copy for a personal voice journal email digest.',
+            'Be accurate, realistic, and grounded in the provided journal content.',
+            'Do not be overly warm, upbeat, optimistic, or motivational.',
+            'It is okay to be compassionate when the content warrants it.',
+            'Do not add bullets, markdown, advice, or claims not supported by the content.',
+            'The intro must be one or two sentences.',
+            'The goals and to-dos summaries must be one sentence each, two only if needed.',
+            'The thoughts summary must be two sentences when possible and no more than three.',
+          ].join(' '),
         },
         {
           role: 'user',
-          content: digestIntroPrompt_(summary),
+          content: digestNarrativePrompt_(summary),
         },
       ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'voice_journal_digest_narrative',
+          strict: true,
+          schema: digestNarrativeSchema_(),
+        },
+      },
     }),
   });
 
@@ -972,10 +1056,14 @@ function generateDigestIntro_(config, summary) {
   }
 
   const parsed = JSON.parse(body);
-  return parsed.output_text || findOutputText_(parsed);
+  const outputText = parsed.output_text || findOutputText_(parsed);
+  if (!outputText) {
+    throw new Error('Digest narrative response did not include output text.');
+  }
+  return JSON.parse(outputText);
 }
 
-function digestIntroPrompt_(summary) {
+function digestNarrativePrompt_(summary) {
   const goals = normalizeArray_(summary.goals).slice(0, 8).map(function(goal) { return goal.summary; }).filter(Boolean);
   const todos = normalizeArray_(summary.todos).slice(0, 10).map(function(todo) { return todo.task; }).filter(Boolean);
   const thoughts = normalizeArray_(summary.thoughts).slice(0, 8).map(function(thought) { return thought.summary; }).filter(Boolean);
@@ -991,16 +1079,54 @@ function digestIntroPrompt_(summary) {
   ].join('\n');
 }
 
-function sanitizeDigestIntro_(intro) {
-  const clean = String(intro || '').replace(/\s+/g, ' ').trim();
-  return clean.length > 500 ? clean.slice(0, 497) + '...' : clean;
+function digestNarrativeSchema_() {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      intro: { type: 'string' },
+      goalsSummary: { type: 'string' },
+      todosSummary: { type: 'string' },
+      thoughtsSummary: { type: 'string' },
+    },
+    required: ['intro', 'goalsSummary', 'todosSummary', 'thoughtsSummary'],
+  };
+}
+
+function sanitizeDigestNarrative_(narrative) {
+  if (typeof narrative === 'string') {
+    return copyObject_(fallbackDigestNarrative_({}), { intro: sanitizeDigestText_(narrative, 500) });
+  }
+  return {
+    intro: sanitizeDigestText_(narrative && narrative.intro, 500),
+    goalsSummary: sanitizeDigestText_(narrative && narrative.goalsSummary, 350),
+    todosSummary: sanitizeDigestText_(narrative && narrative.todosSummary, 350),
+    thoughtsSummary: sanitizeDigestText_(narrative && narrative.thoughtsSummary, 600),
+  };
+}
+
+function sanitizeDigestText_(value, maxLength) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!clean) {
+    return '';
+  }
+  return clean.length > maxLength ? clean.slice(0, maxLength - 3) + '...' : clean;
+}
+
+function fallbackDigestNarrative_(summary) {
+  return {
+    intro: fallbackDigestIntro_(summary),
+    goalsSummary: fallbackSectionSummary_('goals', normalizeArray_(summary && summary.goals), summary),
+    todosSummary: fallbackSectionSummary_('to-dos', normalizeArray_(summary && summary.todos), summary),
+    thoughtsSummary: fallbackSectionSummary_('thoughts', normalizeArray_(summary && summary.thoughts), summary),
+  };
 }
 
 function fallbackDigestIntro_(summary) {
-  const goals = normalizeArray_(summary.goals);
-  const todos = normalizeArray_(summary.todos);
-  const thoughts = normalizeArray_(summary.thoughts);
-  const moodRows = moodCountsToRows_(summary.moodCounts || {});
+  const goals = normalizeArray_(summary && summary.goals);
+  const todos = normalizeArray_(summary && summary.todos);
+  const thoughts = normalizeArray_(summary && summary.thoughts);
+  const moodRows = moodCountsToRows_((summary && summary.moodCounts) || {});
   const leadingMoods = moodRows.slice(0, 2).map(function(row) { return row[0]; });
   const moodSentence = leadingMoods.length > 0
     ? ' The most common moods were ' + leadingMoods.join(' and ') + '.'
@@ -1008,6 +1134,39 @@ function fallbackDigestIntro_(summary) {
   return 'Today\'s digest includes ' + goals.length + ' active goals, '
     + todos.length + ' to-dos, and ' + thoughts.length + ' recent reflections.'
     + moodSentence;
+}
+
+function fallbackSectionSummary_(section, items, summary) {
+  if (section === 'goals') {
+    const dueGoals = items.filter(function(goal) { return goal.reminder_due; }).length;
+    return items.length === 0
+      ? 'There are no active goals in this digest.'
+      : items.length + ' active goals are included' + (dueGoals ? ', with ' + dueGoals + ' currently reminder-due.' : '.');
+  }
+  if (section === 'to-dos') {
+    const dueTodos = items.filter(function(todo) { return todo.reminder_due; }).length;
+    return items.length === 0
+      ? 'There are no open to-dos needing attention in this digest.'
+      : items.length + ' to-dos are included' + (dueTodos ? ', with ' + dueTodos + ' currently reminder-due.' : '.');
+  }
+  const moodRows = moodCountsToRows_((summary && summary.moodCounts) || {});
+  if (items.length === 0) {
+    return 'There are no recent thoughts in the current lookback window.';
+  }
+  if (moodRows.length === 0) {
+    return items.length + ' recent thoughts are included.';
+  }
+  return items.length + ' recent thoughts are included. The most common mood tags are '
+    + moodRows.slice(0, 2).map(function(row) { return row[0]; }).join(' and ') + '.';
+}
+
+function escapeHtml_(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function deleteRowsWhereColumnEquals_(sheet, headerName, expectedValue) {

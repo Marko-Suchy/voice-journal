@@ -183,6 +183,9 @@ test('digest reads reminder state from goals and to-dos', function() {
   );
 
   assert.match(digest.body, /Today's digest includes 2 active goals, 2 to-dos, and 1 recent reflections\./);
+  assert.match(digest.body, /__Goals__\n2 active goals are included, with 1 currently reminder-due\./);
+  assert.match(digest.body, /__To-Dos__\n2 to-dos are included, with 1 currently reminder-due\./);
+  assert.match(digest.body, /__Thoughts__\n1 recent thoughts are included\. The most common mood tags are focused\./);
   assert.match(digest.body, /Run a half marathon through 2026-06-01 \[reminder due\]/);
   assert.match(digest.body, /Read more through 2026-06-01\n/);
   assert.match(digest.body, /Call Sam \[reminder due\]/);
@@ -200,6 +203,42 @@ test('digest reads reminder state from goals and to-dos', function() {
   assert.strictEqual(digest.todoUpdates[0].rowNumber, 2);
   assert.strictEqual(digest.todoUpdates[0].values.reminder_count, 2);
   assert.strictEqual(digest.todoUpdates[0].values.next_reminder_at.toISOString(), '2026-05-23T12:00:00.000Z');
+});
+
+test('digest html bolds underlines and numbers section items', function() {
+  const digest = buildDigestFromRows_(
+    [
+      {
+        values: {
+          goal_id: 'goal_1',
+          summary: 'Keep training',
+          status: 'Active',
+          active_until: '',
+          reminder_frequency_days: 7,
+          next_reminder_at: '2026-05-27T10:00:00Z',
+        },
+      },
+    ],
+    [],
+    [],
+    { DIGEST_LOOKBACK_DAYS: 7 },
+    new Date('2026-05-20T12:00:00Z'),
+    function() {
+      return {
+        intro: 'A realistic opening.',
+        goalsSummary: 'One active goal is present.',
+        todosSummary: 'No to-dos are currently included.',
+        thoughtsSummary: 'No recent thoughts are currently included.',
+      };
+    }
+  );
+
+  assert.match(digest.htmlBody, /<strong><u>Goals<\/u><\/strong>/);
+  assert.match(digest.htmlBody, /<strong><u>To-Dos<\/u><\/strong>/);
+  assert.match(digest.htmlBody, /<strong><u>Thoughts<\/u><\/strong>/);
+  assert.match(digest.htmlBody, /<ol style=/);
+  assert.match(digest.htmlBody, /<li>Keep training<\/li>/);
+  assert.match(digest.htmlBody, /One active goal is present\./);
 });
 
 test('digest uses AI introduction when available', function() {
