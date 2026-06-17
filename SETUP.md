@@ -10,7 +10,7 @@ You need:
 - An OpenAI API key.
 - A Google Drive folder that will act as the voice memo inbox.
 - A way to upload phone voice memos into that Drive folder, such as an iPhone Shortcut.
-- This repository available locally so you can copy `src/Code.js`.
+- This repository available locally so you can copy `src/Code.js` and `src/Index.html`.
 
 ## 1. Create The Google Sheet
 
@@ -20,7 +20,9 @@ You need:
 4. Delete any starter code in the Apps Script editor.
 5. Copy the full contents of `src/Code.js` from this repository.
 6. Paste that code into the Apps Script editor.
-7. Save the Apps Script project.
+7. Add a new HTML file named `Index`.
+8. Copy the full contents of `src/Index.html` into that HTML file.
+9. Save the Apps Script project.
 
 ## 2. Create The Sheet Tabs
 
@@ -39,9 +41,10 @@ After the function finishes, the spreadsheet should contain these tabs:
 - `Goals`
 - `To-Dos`
 - `Thoughts`
+- `Search Index` hidden
 - `Config`
 
-`Dashboard` is moved to the leftmost tab. The source tables are formatted with wider wrapped text columns, and the `Config` tab includes quick-action buttons for installing the inbox poller and updating the dashboard.
+`Dashboard` is moved to the leftmost tab. The source tables are formatted with wider wrapped text columns, `Search Index` is hidden, and the `Config` tab includes quick-action buttons for installing the inbox poller and updating the dashboard.
 
 ## 3. Create The Drive Inbox Folder
 
@@ -106,7 +109,22 @@ Check the spreadsheet after it finishes:
 
 If processing fails, check the `status`, `error`, and `retry_count` columns in `Entries`.
 
-## 7. Test The Dashboard
+## 7. Deploy And Test The Search Web App
+
+After setup has created the sheet tabs and the OpenAI API key is stored, deploy the search interface:
+
+1. In Apps Script, click `Deploy > New deployment`.
+2. Choose `Web app`.
+3. Set `Execute as` to `Me`.
+4. Set access to only yourself or authorized users.
+5. Deploy and authorize any requested permissions.
+6. Copy the web app URL.
+
+Open the web app URL in your browser. The page should show `Voice Journal Search`, index status, a query box, and buttons for `Search`, `Refresh Index`, and `Rebuild Index`.
+
+Before the first search, click `Rebuild Index` in the web app, or run `Voice Journal > Rebuild Search Index` from the spreadsheet menu. After that, new processed memos are indexed automatically, and `Refresh Index` updates only changed entries.
+
+## 8. Test The Dashboard
 
 After at least one goal, to-do, or thought has been added, run:
 
@@ -126,7 +144,7 @@ Confirm that:
 You can also refresh from the custom `Voice Journal > Refresh Dashboard` menu after reopening the spreadsheet.
 The `Config` tab also has an `Update Dashboard` quick-action button.
 
-## 8. Test The Digest
+## 9. Test The Digest
 
 After at least one memo has been processed, run:
 
@@ -141,7 +159,7 @@ Confirm that the configured recipient receives an email. If no email arrives, ch
 - Gmail spam or filtering rules.
 - Whether Apps Script authorization was completed.
 
-## 9. Install Automation Triggers
+## 10. Install Automation Triggers
 
 To check the Drive inbox every 15 minutes, run:
 
@@ -159,7 +177,7 @@ installDailyDigestTrigger()
 
 The digest trigger runs daily at `DIGEST_SEND_HOUR`, then uses `DIGEST_FREQUENCY_PER_WEEK` to decide whether that day should send.
 
-## 10. Create An iPhone Shortcut
+## 11. Create An iPhone Shortcut
 
 Create a Shortcut that:
 
@@ -175,7 +193,7 @@ Voice Journal 2026-05-16 09-30.m4a
 
 The current script uses the Google Drive file ID for deduplication and the Drive file last-updated time for `uploaded_at` and extracted fact `created_at` values.
 
-## 11. Operating The Journal
+## 12. Operating The Journal
 
 Use the sheet as the review surface:
 
@@ -186,9 +204,16 @@ Use the sheet as the review surface:
 - Keep pending to-dos as `Open`.
 - Review mood tags and reflection summaries in `Thoughts`.
 
+Use the web app as the search surface:
+
+- Type a query into the web app and click `Search`.
+- Review ranked exact transcript quotes and source metadata.
+- Use `Refresh Index` if transcripts or thoughts were edited manually.
+- Use `Rebuild Index` if embeddings need to be regenerated from scratch.
+
 Goals and to-dos update their own reminder state after digests are sent. Completed or expired records stop appearing as active digest reminders.
 
-## 12. Local Tests
+## 13. Local Tests
 
 From the repository root, run:
 

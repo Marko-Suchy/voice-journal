@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8f9fa;
+        --surface: #ffffff;
+        --text: #202124;
+        --muted: #5f6368;
+        --line: #dadce0;
+        --field: #f1f3f4;
+        --primary: #1a73e8;
+        --primary-dark: #1558b0;
+        --danger: #b3261e;
+        --ok: #188038;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, sans-serif;
+        line-height: 1.45;
+      }
+
+      .app {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+        text-align: right;
+      }
+
+      .search-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--text);
+        background: var(--surface);
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 84px;
+        padding: 12px;
+        resize: vertical;
+      }
+
+      input,
+      select {
+        min-height: 38px;
+        padding: 8px 10px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 160px 160px;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .query {
+        grid-column: 1 / -1;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+
+      button {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+        padding: 8px 12px;
+      }
+
+      button.primary {
+        border-color: var(--primary);
+        background: var(--primary);
+        color: #ffffff;
+      }
+
+      button.primary:hover {
+        background: var(--primary-dark);
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
+
+      .message {
+        min-height: 22px;
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .message.error {
+        color: var(--danger);
+      }
+
+      .message.ok {
+        color: var(--ok);
+      }
+
+      .results {
+        display: grid;
+        gap: 12px;
+      }
+
+      .result {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+      }
+
+      .result-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 10px;
+      }
+
+      blockquote {
+        margin: 0;
+        padding: 0 0 0 12px;
+        border-left: 3px solid var(--primary);
+        white-space: pre-wrap;
+      }
+
+      details {
+        margin-top: 12px;
+      }
+
+      summary {
+        color: var(--primary);
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .context {
+        margin-top: 8px;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+
+      .support {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      a {
+        color: var(--primary);
+      }
+
+      @media (max-width: 760px) {
+        .app {
+          padding: 16px;
+        }
+
+        header {
+          display: block;
+        }
+
+        .status {
+          margin-top: 8px;
+          text-align: left;
+        }
+
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .actions {
+          justify-content: stretch;
+        }
+
+        button {
+          flex: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Voice Journal Search</h1>
+        <div class="status" id="status">Loading index status...</div>
+      </header>
+
+      <section class="search-panel">
+        <div class="controls">
+          <div class="query">
+            <label for="query">Query</label>
+            <textarea id="query" placeholder="Search prior journal entries"></textarea>
+          </div>
+          <div>
+            <label for="maxResults">Max results</label>
+            <input id="maxResults" type="number" min="1" max="50" step="1" value="12">
+          </div>
+          <div>
+            <label for="minScore">Minimum score</label>
+            <input id="minScore" type="number" min="0" max="1" step="0.01" value="0.20">
+          </div>
+          <div class="actions">
+            <button class="primary" id="searchButton" type="button">Search</button>
+            <button id="refreshButton" type="button">Refresh Index</button>
+            <button id="rebuildButton" type="button">Rebuild Index</button>
+          </div>
+        </div>
+        <div class="message" id="message"></div>
+      </section>
+
+      <section class="results" id="results"></section>
+    </main>
+
+    <script>
+      const elements = {
+        query: document.getElementById('query'),
+        maxResults: document.getElementById('maxResults'),
+        minScore: document.getElementById('minScore'),
+        searchButton: document.getElementById('searchButton'),
+        refreshButton: document.getElementById('refreshButton'),
+        rebuildButton: document.getElementById('rebuildButton'),
+        status: document.getElementById('status'),
+        message: document.getElementById('message'),
+        results: document.getElementById('results'),
+      };
+
+      function setBusy(isBusy) {
+        elements.searchButton.disabled = isBusy;
+        elements.refreshButton.disabled = isBusy;
+        elements.rebuildButton.disabled = isBusy;
+      }
+
+      function setMessage(text, type) {
+        elements.message.textContent = text || '';
+        elements.message.className = 'message' + (type ? ' ' + type : '');
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function renderState(state) {
+        if (!state) {
+          elements.status.textContent = 'Index status unavailable';
+          return;
+        }
+        const parts = [
+          state.indexedChunks + ' indexed',
+          state.failedChunks + ' failed',
+        ];
+        if (state.lastIndexedAt) {
+          parts.push('last indexed ' + state.lastIndexedAt);
+        }
+        elements.status.textContent = parts.join(' | ');
+        if (state.defaults) {
+          elements.maxResults.value = String(state.defaults.maxResults || 12);
+          elements.minScore.value = String(state.defaults.minScore || 0.2);
+        }
+      }
+
+      function renderResults(results) {
+        if (!results || results.length === 0) {
+          elements.results.innerHTML = '<div class="result">No matching quotes found.</div>';
+          return;
+        }
+
+        elements.results.innerHTML = results.map(function(result) {
+          const contextBefore = result.contextBefore
+            ? '<div><strong>Before</strong><br>' + escapeHtml(result.contextBefore) + '</div>'
+            : '';
+          const contextAfter = result.contextAfter
+            ? '<div><strong>After</strong><br>' + escapeHtml(result.contextAfter) + '</div>'
+            : '';
+          const context = contextBefore || contextAfter
+            ? '<details><summary>Context</summary><div class="context">' + contextBefore + (contextBefore && contextAfter ? '<br><br>' : '') + contextAfter + '</div></details>'
+            : '';
+          const audio = result.audioUrl
+            ? '<a href="' + escapeHtml(result.audioUrl) + '" target="_blank" rel="noopener">Audio</a>'
+            : 'No audio link';
+          const support = [
+            result.relatedThoughts ? 'Related thoughts: ' + escapeHtml(result.relatedThoughts) : '',
+            result.moods ? 'Moods: ' + escapeHtml(result.moods) : '',
+          ].filter(Boolean).join('<br>');
+          return [
+            '<article class="result">',
+            '<div class="result-meta">',
+            '<span>#' + result.rank + '</span>',
+            '<span>Score ' + result.score.toFixed(3) + '</span>',
+            '<span>' + escapeHtml(result.entryId) + '</span>',
+            '<span>' + escapeHtml(result.uploadedAt) + '</span>',
+            '<span>' + audio + '</span>',
+            '</div>',
+            '<blockquote>' + escapeHtml(result.quote) + '</blockquote>',
+            context,
+            support ? '<div class="support">' + support + '</div>' : '',
+            '</article>',
+          ].join('');
+        }).join('');
+      }
+
+      function handleFailure(error) {
+        setBusy(false);
+        setMessage(error && error.message ? error.message : String(error || 'Request failed.'), 'error');
+      }
+
+      function loadState() {
+        setBusy(true);
+        google.script.run
+          .withSuccessHandler(function(state) {
+            setBusy(false);
+            renderState(state);
+            setMessage('', '');
+          })
+          .withFailureHandler(handleFailure)
+          .getSearchAppState();
+      }
+
+      function search() {
+        const query = elements.query.value.trim();
+        if (!query) {
+          setMessage('Enter a search query before searching.', 'error');
+          elements.query.focus();
+          return;
+        }
+        setBusy(true);
+        setMessage('Searching...', '');
+        google.script.run
+          .withSuccessHandler(function(response) {
+            setBusy(false);
+            renderState(response.state);
+            renderResults(response.results);
+            setMessage('Found ' + response.results.length + ' result(s).', response.results.length ? 'ok' : '');
+          })
+          .withFailureHandler(handleFailure)
+          .searchJournalWeb(query, {
+            maxResults: elements.maxResults.value,
+            minScore: elements.minScore.value,
+          });
+      }
+
+      function refreshIndex(forceRebuild) {
+        setBusy(true);
+        setMessage(forceRebuild ? 'Rebuilding index...' : 'Refreshing index...', '');
+        const runner = google.script.run
+          .withSuccessHandler(function(response) {
+            setBusy(false);
+            renderState(response.state);
+            setMessage((forceRebuild ? 'Rebuilt' : 'Refreshed') + ' ' + response.changedEntries + ' entr' + (response.changedEntries === 1 ? 'y.' : 'ies.'), 'ok');
+          })
+          .withFailureHandler(handleFailure);
+        if (forceRebuild) {
+          runner.rebuildSearchIndexWeb();
+        } else {
+          runner.refreshSearchIndexWeb();
+        }
+      }
+
+      elements.searchButton.addEventListener('click', search);
+      elements.refreshButton.addEventListener('click', function() {
+        refreshIndex(false);
+      });
+      elements.rebuildButton.addEventListener('click', function() {
+        refreshIndex(true);
+      });
+      elements.query.addEventListener('keydown', function(event) {
+        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+          search();
+        }
+      });
+
+      loadState();
+    </script>
+  </body>
+</html>

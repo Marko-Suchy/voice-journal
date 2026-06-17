@@ -15,6 +15,7 @@ The system is meant to help with:
 - Saving larger reflections as tagged thoughts.
 - Tracking digest reminder state directly on active goals and open tasks.
 - Reviewing active goals, active to-dos, and recent mood trends in a Sheets-native dashboard.
+- Searching prior journal entries from a separate Apps Script web app that returns exact transcript quotes.
 - Sending an email digest of active goals, relevant to-dos, and recent reflections.
 
 ## Pipeline
@@ -29,7 +30,9 @@ The pipeline starts with an audio file in Google Drive and builds structured jou
 6. The transcript is sent to an OpenAI text model for structured extraction.
 7. The script writes one row to `Entries` for the processed Drive file.
 8. The script writes downstream rows to `Goals`, `To-Dos`, and `Thoughts` based on the extracted transcript content.
-9. A scheduled digest email summarizes active goals, relevant to-dos, due reminders, and recent reflections.
+9. Transcript chunks are embedded into the hidden `Search Index` tab for quote search.
+10. The web app searches the index and returns exact transcript quotes with source metadata.
+11. A scheduled digest email summarizes active goals, relevant to-dos, due reminders, and recent reflections.
 
 In short:
 
@@ -40,12 +43,17 @@ flowchart TD
     goals["Goals\nextracted from entry transcript"]
     todos["To-Dos\nextracted from entry transcript"]
     thoughts["Thoughts\nextracted from entry transcript"]
+    searchIndex["Search Index\nhidden transcript chunk embeddings"]
+    webapp["Search Web App\nranked exact quotes"]
     digest["Email Digest\nactive items + recent reflections"]
 
     drive -->|"Drive file ID, URL, uploaded_at"| entries
     entries -->|"entry_id"| goals
     entries -->|"entry_id"| todos
     entries -->|"entry_id"| thoughts
+    entries -->|"transcript chunks"| searchIndex
+    thoughts -->|"related context"| searchIndex
+    searchIndex --> webapp
     goals --> digest
     todos --> digest
     thoughts --> digest
@@ -61,7 +69,9 @@ The Google Drive audio file is the root object in the data model. The script use
 
 Goals and to-dos carry their own digest reminder state, including when the next reminder is due, when it was last included as due, and how many reminder nudges have been sent. Thoughts remain stateless and are included by recency.
 
-`Config` is separate from the journal lineage. It stores user-controlled settings such as the Drive inbox folder, digest recipient, model names, reminder defaults, and mood tag list.
+`Search Index` stores transcript chunks, embeddings, and search metadata. It is hidden during setup and is treated as derived data; it can be refreshed or rebuilt from the processed `Entries` and `Thoughts` tables.
+
+`Config` is separate from the journal lineage. It stores user-controlled settings such as the Drive inbox folder, digest recipient, model names, reminder defaults, search settings, and mood tag list.
 
 The core relationships are:
 
@@ -73,7 +83,8 @@ The core relationships are:
 
 ## Project Structure
 
-- `src/Code.js`: Google Apps Script implementation.
+- `src/Code.js`: Google Apps Script backend implementation.
+- `src/Index.html`: Apps Script web app UI for journal quote search.
 - `test/voice_journal.test.js`: Local mock tests for pure helper behavior.
 - `README.md`: High-level project overview.
 - `SETUP.md`: Detailed setup and operating instructions.
@@ -87,7 +98,14 @@ Running `setupVoiceJournalSheet()` creates and maintains these tabs:
 - `Goals`: Goal records extracted from transcripts.
 - `To-Dos`: Task records extracted from transcripts.
 - `Thoughts`: Reflection records with mood tags.
+- `Search Index`: Hidden transcript chunk embedding index used by the web app.
 - `Config`: User-editable configuration values and quick-action buttons.
+
+## Search Web App
+
+The recommended search interface is the Apps Script web app served by `Index.html`. It provides a browser page with a query box, result filters, index status, refresh/rebuild controls, and ranked quote cards. Results are exact transcript excerpts with nearby context, `entry_id`, upload date, audio link, related thoughts, and moods.
+
+The legacy Sheets menu actions for refreshing and rebuilding the search index remain available, but the sheet is no longer the primary place to send search queries.
 
 ## Review Workflow
 
@@ -110,6 +128,9 @@ The most important `Config` values are:
 - `DIGEST_FREQUENCY_PER_WEEK`: Number of digest days per week.
 - `DIGEST_SEND_HOUR`: Hour of day for scheduled digest delivery; default `18` sends at 6 PM.
 - `DIGEST_LOOKBACK_DAYS`: Number of days included in recent thought and to-do review.
+- `EMBEDDING_MODEL`: OpenAI embedding model used by journal search.
+- `SEARCH_MAX_RESULTS`: Default number of web app search results.
+- `SEARCH_MIN_SCORE`: Minimum cosine similarity score shown in search results.
 - `MOOD_TAGS`: Allowed mood tags for extracted thoughts.
 
 See [SETUP.md](SETUP.md) for the full setup flow.
@@ -126,10 +147,10 @@ These tests do not call Google or OpenAI services. They are intended to validate
 
 ## Current Limitations
 
-- The Apps Script source is currently deployed by copying `src/Code.js` into a bound Apps Script project.
+- The Apps Script source is currently deployed by copying `src/Code.js` and `src/Index.html` into a bound Apps Script project.
 - The pipeline does not archive processed audio files by default.
 - Date inference depends on transcript context and may be imperfect for phrases like "tomorrow" or "next week."
-- The dashboard is Sheets-native; richer search, RAG, and custom web app panels are not included yet.
+- The search web app returns quote retrieval results, not generated answers or chat-style synthesis.
 
 ## Credits
 
