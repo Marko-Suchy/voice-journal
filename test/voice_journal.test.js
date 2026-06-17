@@ -3,26 +3,46 @@ const assert = require('assert');
 const {
   HEADERS,
   SHEET_NAMES,
+  DEFAULT_DESIGN_ROWS,
+  DESIGN,
+  assertVoiceJournalInstallReady_,
+  buildVoiceJournalInstallPlan_,
+  buildVoiceJournalInstallSummary_,
   buildDigestFromRows_,
   buildDashboardGoalRows_,
-  buildDashboardTodoRows_,
+  buildDashboardFollowUpRows_,
   buildRecentMoodCounts_,
   buildSearchIndexRowsForEntry_,
   buildSearchAppStateFromRows_,
   buildSearchResultObjects_,
   buildSearchResultRows_,
-  buildThoughtContextByEntryId_,
+  buildReflectionContextByEntryId_,
   chunkTranscript_,
   cosineSimilarity_,
   dashboardGoalActionStatus_,
   dashboardCheckboxStatus_,
   fallbackDigestIntro_,
+  findMatchedKeywords_,
   moodCountsToRows_,
+  customFactFields_,
+  defaultCustomFactFields_,
+  normalizeCustomExtraction_,
+  normalizeDesignRow_,
   normalizeSearchOptions_,
+  parseFactTableDictionary_,
+  parseKeywords_,
   rankSearchRows_,
+  reservedCustomFactColumns_,
+  shouldRunCustomExtraction_,
+  customExtractionHeaders_,
+  customExtractionSchema_,
+  customFactFieldSchema_,
+  clearConfigValue_,
+  extractionSchema_,
+  getOpenAiApiKeyPropertyName_,
   transcriptHash_,
   validateSearchQuery_,
-} = require('../src/Code.js');
+} = require('./load_app_script');
 
 function test(name, fn) {
   try {
@@ -34,18 +54,18 @@ function test(name, fn) {
   }
 }
 
-test('filters active dashboard to-dos', function() {
+test('filters active dashboard follow ups', function() {
   const rows = [
-    { values: { todo_id: 'todo_1', task: 'Call Sam', status: 'Open', due_date_optional: '2026-05-20', created_at: '2026-05-18' } },
-    { values: { todo_id: 'todo_2', task: 'File taxes', status: 'Done', due_date_optional: '', created_at: '2026-05-17' } },
-    { values: { todo_id: 'todo_3', task: 'Draft outline', status: 'Active', due_date_optional: '', created_at: '2026-05-16' } },
-    { values: { todo_id: 'todo_4', task: 'Old thing', status: 'Archived', due_date_optional: '', created_at: '2026-05-15' } },
+    { values: { follow_up_id: 'followUp_1', summary: 'Call Sam', status: 'Open', due_date_optional: '2026-05-20', created_at: '2026-05-18' } },
+    { values: { follow_up_id: 'followUp_2', summary: 'File taxes', status: 'Done', due_date_optional: '', created_at: '2026-05-17' } },
+    { values: { follow_up_id: 'followUp_3', summary: 'Draft outline', status: 'Active', due_date_optional: '', created_at: '2026-05-16' } },
+    { values: { follow_up_id: 'followUp_4', summary: 'Old thing', status: 'Archived', due_date_optional: '', created_at: '2026-05-15' } },
   ];
 
-  const dashboardRows = buildDashboardTodoRows_(rows);
+  const dashboardRows = buildDashboardFollowUpRows_(rows);
 
   assert.strictEqual(dashboardRows.length, 2);
-  assert.deepStrictEqual(dashboardRows.map(function(row) { return row[5]; }), ['todo_1', 'todo_3']);
+  assert.deepStrictEqual(dashboardRows.map(function(row) { return row[5]; }), ['followUp_1', 'followUp_3']);
   assert.strictEqual(dashboardRows[0][0], false);
 });
 
@@ -63,7 +83,7 @@ test('counts recent comma-separated moods', function() {
   });
 });
 
-test('ignores thoughts outside the mood lookback window', function() {
+test('ignores reflections outside the mood lookback window', function() {
   const now = new Date('2026-05-19T12:00:00Z');
   const rows = [
     { values: { moods: 'focused', created_at: '2026-05-19T09:00:00Z' } },
@@ -83,7 +103,7 @@ test('sorts mood chart rows by count then name', function() {
   ]);
 });
 
-test('maps dashboard checkbox edits to todo statuses', function() {
+test('maps dashboard checkbox edits to follow up statuses', function() {
   assert.strictEqual(dashboardCheckboxStatus_(true), 'Done');
   assert.strictEqual(dashboardCheckboxStatus_('TRUE'), 'Done');
   assert.strictEqual(dashboardCheckboxStatus_(false), 'Open');
@@ -189,7 +209,7 @@ test('search result rows preserve quotes and source metadata', function() {
       entry_id: 'entry_1',
       uploaded_at: '2026-05-20T12:00:00Z',
       audio_url: 'https://drive.example/audio',
-      related_thoughts: 'A thought',
+      related_reflections: 'A reflection',
       moods: 'focused',
     },
   ]);
@@ -198,7 +218,7 @@ test('search result rows preserve quotes and source metadata', function() {
   assert.strictEqual(rows[0][0], 1);
   assert.strictEqual(rows[0][2], 'Exact transcript quote.');
   assert.strictEqual(rows[0][4], 'entry_1');
-  assert.strictEqual(rows[0][7], 'A thought');
+  assert.strictEqual(rows[0][7], 'A reflection');
 });
 
 test('search result objects preserve exact quotes and metadata for web app', function() {
@@ -211,7 +231,7 @@ test('search result objects preserve exact quotes and metadata for web app', fun
       entry_id: 'entry_1',
       uploaded_at: '2026-05-20T12:00:00Z',
       audio_url: 'https://drive.example/audio',
-      related_thoughts: 'A thought',
+      related_reflections: 'A reflection',
       moods: 'focused',
     },
   ]);
@@ -265,14 +285,14 @@ test('web search options use config defaults and clamp max results', function() 
   );
 });
 
-test('search index enrichment joins thoughts by entry id', function() {
-  const context = buildThoughtContextByEntryId_([
+test('search index enrichment joins reflections by entry id', function() {
+  const context = buildReflectionContextByEntryId_([
     { values: { entry_id: 'entry_1', summary: 'Prototype felt promising', moods: 'focused, curious' } },
     { values: { entry_id: 'entry_1', summary: 'Need a calmer review loop', moods: 'calm, focused' } },
     { values: { entry_id: 'entry_2', summary: 'Different entry', moods: 'tired' } },
   ]);
 
-  assert.strictEqual(context.entry_1.related_thoughts, 'Prototype felt promising; Need a calmer review loop');
+  assert.strictEqual(context.entry_1.related_reflections, 'Prototype felt promising; Need a calmer review loop');
   assert.strictEqual(context.entry_1.moods, 'focused, curious, calm');
 });
 
@@ -287,7 +307,7 @@ test('search index rows include enriched context and embeddings', function() {
         audio_url: 'https://drive.example/audio',
       },
     },
-    { related_thoughts: 'Search matters', moods: 'focused' },
+    { related_reflections: 'Search matters', moods: 'focused' },
     { EMBEDDING_MODEL: 'test-embedding', EMBEDDING_DIMENSIONS: 2, SEARCH_CHUNK_TARGET_CHARS: 1200, SEARCH_CHUNK_OVERLAP_CHARS: 200 },
     new Date('2026-05-20T12:00:00Z'),
     function() { return [1, 0]; }
@@ -295,13 +315,13 @@ test('search index rows include enriched context and embeddings', function() {
 
   assert.strictEqual(rows.length, 1);
   assert.strictEqual(rows[0].entry_id, 'entry_1');
-  assert.strictEqual(rows[0].related_thoughts, 'Search matters');
+  assert.strictEqual(rows[0].related_reflections, 'Search matters');
   assert.strictEqual(rows[0].moods, 'focused');
   assert.strictEqual(rows[0].embedding_json, JSON.stringify([1, 0]));
   assert.strictEqual(rows[0].index_status, 'Indexed');
 });
 
-test('digest reads reminder state from goals and to-dos', function() {
+test('digest reads reminder state from goals and follow ups', function() {
   const now = new Date('2026-05-20T12:00:00Z');
   const digest = buildDigestFromRows_(
     [
@@ -334,8 +354,8 @@ test('digest reads reminder state from goals and to-dos', function() {
       {
         rowNumber: 2,
         values: {
-          todo_id: 'todo_1',
-          task: 'Call Sam',
+          follow_up_id: 'followUp_1',
+          summary: 'Call Sam',
           status: 'Open',
           created_at: '2026-05-10T09:00:00Z',
           due_date_optional: '',
@@ -347,8 +367,8 @@ test('digest reads reminder state from goals and to-dos', function() {
       {
         rowNumber: 3,
         values: {
-          todo_id: 'todo_2',
-          task: 'Prep report',
+          follow_up_id: 'followUp_2',
+          summary: 'Prep report',
           status: 'Open',
           created_at: '2026-05-01T09:00:00Z',
           due_date_optional: '2026-05-23',
@@ -359,18 +379,18 @@ test('digest reads reminder state from goals and to-dos', function() {
       },
     ],
     [
-      { values: { thought_id: 'thought_1', summary: 'Felt focused during planning', moods: 'focused', created_at: '2026-05-19T09:00:00Z' } },
-      { values: { thought_id: 'thought_2', summary: 'Old note', moods: 'tired', created_at: '2026-04-01T09:00:00Z' } },
+      { values: { reflection_id: 'reflection_1', summary: 'Felt focused during planning', moods: 'focused', created_at: '2026-05-19T09:00:00Z' } },
+      { values: { reflection_id: 'reflection_2', summary: 'Old note', moods: 'tired', created_at: '2026-04-01T09:00:00Z' } },
     ],
     { DIGEST_LOOKBACK_DAYS: 7 },
     now,
     function() { throw new Error('intro failed'); }
   );
 
-  assert.match(digest.body, /Today's digest includes 2 active goals, 2 to-dos, and 1 recent reflections\./);
+  assert.match(digest.body, /Today's digest includes 2 active goals, 2 follow ups, and 1 recent reflections\./);
   assert.match(digest.body, /__Goals__\n2 active goals are included, with 1 currently reminder-due\./);
-  assert.match(digest.body, /__To-Dos__\n2 to-dos are included, with 1 currently reminder-due\./);
-  assert.match(digest.body, /__Thoughts__\n1 recent thoughts are included\. The most common mood tags are focused\./);
+  assert.match(digest.body, /__Follow Ups__\n2 follow ups are included, with 1 currently reminder-due\./);
+  assert.match(digest.body, /__Reflections__\n1 recent reflections are included\. The most common mood tags are focused\./);
   assert.match(digest.body, /Run a half marathon through 2026-06-01 \[reminder due\]/);
   assert.match(digest.body, /Read more through 2026-06-01\n/);
   assert.match(digest.body, /Call Sam \[reminder due\]/);
@@ -384,10 +404,10 @@ test('digest reads reminder state from goals and to-dos', function() {
   assert.strictEqual(digest.goalUpdates[0].values.last_reminded_at, now);
   assert.strictEqual(digest.goalUpdates[0].values.next_reminder_at.toISOString(), '2026-05-27T12:00:00.000Z');
 
-  assert.strictEqual(digest.todoUpdates.length, 1);
-  assert.strictEqual(digest.todoUpdates[0].rowNumber, 2);
-  assert.strictEqual(digest.todoUpdates[0].values.reminder_count, 2);
-  assert.strictEqual(digest.todoUpdates[0].values.next_reminder_at.toISOString(), '2026-05-23T12:00:00.000Z');
+  assert.strictEqual(digest.followUpUpdates.length, 1);
+  assert.strictEqual(digest.followUpUpdates[0].rowNumber, 2);
+  assert.strictEqual(digest.followUpUpdates[0].values.reminder_count, 2);
+  assert.strictEqual(digest.followUpUpdates[0].values.next_reminder_at.toISOString(), '2026-05-23T12:00:00.000Z');
 });
 
 test('digest html bolds underlines and numbers section items', function() {
@@ -412,15 +432,15 @@ test('digest html bolds underlines and numbers section items', function() {
       return {
         intro: 'A realistic opening.',
         goalsSummary: 'One active goal is present.',
-        todosSummary: 'No to-dos are currently included.',
-        thoughtsSummary: 'No recent thoughts are currently included.',
+        followUpsSummary: 'No follow ups are currently included.',
+        reflectionsSummary: 'No recent reflections are currently included.',
       };
     }
   );
 
   assert.match(digest.htmlBody, /<strong><u>Goals<\/u><\/strong>/);
-  assert.match(digest.htmlBody, /<strong><u>To-Dos<\/u><\/strong>/);
-  assert.match(digest.htmlBody, /<strong><u>Thoughts<\/u><\/strong>/);
+  assert.match(digest.htmlBody, /<strong><u>Follow Ups<\/u><\/strong>/);
+  assert.match(digest.htmlBody, /<strong><u>Reflections<\/u><\/strong>/);
   assert.match(digest.htmlBody, /<ol style=/);
   assert.match(digest.htmlBody, /<li>Keep training<\/li>/);
   assert.match(digest.htmlBody, /One active goal is present\./);
@@ -442,12 +462,12 @@ test('digest uses AI introduction when available', function() {
 test('fallback digest intro summarizes counts and moods', function() {
   const intro = fallbackDigestIntro_({
     goals: [{ summary: 'Goal' }],
-    todos: [{ task: 'Task' }, { task: 'Second task' }],
-    thoughts: [{ summary: 'Thought', moods: 'calm, focused' }],
+    followUps: [{ summary: 'Task' }, { summary: 'Second summary' }],
+    reflections: [{ summary: 'reflection', moods: 'calm, focused' }],
     moodCounts: { calm: 1, focused: 1 },
   });
 
-  assert.match(intro, /1 active goals, 2 to-dos, and 1 recent reflections/);
+  assert.match(intro, /1 active goals, 2 follow ups, and 1 recent reflections/);
   assert.match(intro, /calm and focused|focused and calm/);
 });
 
@@ -455,5 +475,320 @@ test('reminders table is no longer part of the configured schema', function() {
   assert.strictEqual(SHEET_NAMES.REMINDERS, undefined);
   assert.strictEqual(HEADERS.Reminders, undefined);
   assert.ok(HEADERS.Goals.indexOf('next_reminder_at') !== -1);
-  assert.ok(HEADERS['To-Dos'].indexOf('last_reminded_at') !== -1);
+  assert.ok(HEADERS['Follow Ups'].indexOf('last_reminded_at') !== -1);
+});
+
+test('built-in extraction schema uses follow ups and reflections', function() {
+  const schema = extractionSchema_();
+  assert.deepStrictEqual(schema.required, ['goals', 'followUps', 'reflections']);
+  assert.ok(schema.properties.followUps);
+  assert.ok(schema.properties.reflections);
+  assert.deepStrictEqual(customExtractionSchema_().required, ['records']);
+  assert.ok(HEADERS.Entries.indexOf('has_follow_up') !== -1);
+  assert.ok(HEADERS.Entries.indexOf('has_reflection') !== -1);
+  assert.ok(HEADERS['Follow Ups'].indexOf('follow_up_id') !== -1);
+  assert.ok(HEADERS.Reflections.indexOf('reflection_id') !== -1);
+});
+
+test('design defaults seed the built-in extraction rows', function() {
+  assert.strictEqual(SHEET_NAMES.DESIGN, 'Design');
+  assert.deepStrictEqual(DEFAULT_DESIGN_ROWS.map(function(row) { return row.extraction_key; }), [
+    'follow_ups',
+    'goals',
+    'reflections',
+  ]);
+  assert.strictEqual(DESIGN.ACTION_COLUMN, 9);
+});
+
+test('normalizes design rows and fallback custom headers', function() {
+  const row = normalizeDesignRow_({
+    extraction_key: 'Recurring Themes!',
+    display_name: '',
+    sheet_name: 'Recurring/Themes',
+    keywords: 'theme, pattern; theme',
+    ai_decides_without_keyword: 'FALSE',
+    status: '',
+  });
+
+  assert.strictEqual(row.extraction_key, 'recurring_themes');
+  assert.strictEqual(row.display_name, 'Recurring Themes');
+  assert.strictEqual(row.sheet_name, 'Recurring Themes');
+  assert.strictEqual(row.fact_table_dictionary, '');
+  assert.strictEqual(row.keywords, 'theme, pattern');
+  assert.strictEqual(row.ai_decides_without_keyword, false);
+  assert.strictEqual(row.status, 'Active');
+  assert.deepStrictEqual(customExtractionHeaders_(row.extraction_key), [
+    'recurring_themes_id',
+    'entry_id',
+    'matched_keywords',
+    'created_at',
+    'extracted_at',
+    'summary',
+    'evidence',
+    'status',
+  ]);
+});
+
+test('parses custom fact table dictionary fields', function() {
+  const dictionary = JSON.stringify({
+    fields: [
+      { key: 'summary', type: 'string', description: 'Short summary.' },
+      { key: 'priority', type: 'enum', description: 'Priority.', values: ['low', 'medium', 'high'] },
+      { key: 'is_recurring', type: 'boolean', description: 'Whether this repeats.' },
+      { key: 'score', type: 'number', description: 'Confidence score.' },
+      { key: 'target_date', type: 'date', description: 'Relevant date.' },
+    ],
+  });
+
+  const parsed = parseFactTableDictionary_(dictionary, 'themes');
+
+  assert.deepStrictEqual(parsed.fields.map(function(field) { return field.key; }), [
+    'summary',
+    'priority',
+    'is_recurring',
+    'score',
+    'target_date',
+  ]);
+  assert.deepStrictEqual(parsed.fields[1].values, ['low', 'medium', 'high']);
+});
+
+test('rejects invalid fact table dictionary definitions', function() {
+  assert.throws(function() {
+    parseFactTableDictionary_('{', 'themes');
+  }, /valid JSON/);
+  assert.throws(function() {
+    parseFactTableDictionary_(JSON.stringify({ fields: [{ key: 'BadKey', type: 'string' }] }), 'themes');
+  }, /snake_case/);
+  assert.throws(function() {
+    parseFactTableDictionary_(JSON.stringify({ fields: [{ key: 'rating', type: 'object' }] }), 'themes');
+  }, /unsupported/);
+  assert.throws(function() {
+    parseFactTableDictionary_(JSON.stringify({ fields: [{ key: 'priority', type: 'enum' }] }), 'themes');
+  }, /enum field must define values/);
+  assert.throws(function() {
+    parseFactTableDictionary_(JSON.stringify({ fields: [{ key: 'entry_id', type: 'string' }] }), 'themes');
+  }, /reserved/);
+  assert.throws(function() {
+    parseFactTableDictionary_(JSON.stringify({ fields: [{ key: 'themes_id', type: 'string' }] }), 'themes');
+  }, /reserved/);
+  assert.throws(function() {
+    parseFactTableDictionary_(JSON.stringify({
+      fields: [
+        { key: 'summary', type: 'string' },
+        { key: 'summary', type: 'string' },
+      ],
+    }), 'themes');
+  }, /duplicated/);
+});
+
+test('dynamic custom headers add dictionary fields after metadata', function() {
+  const dictionary = JSON.stringify({
+    fields: [
+      { key: 'summary', type: 'string', description: 'Summary.' },
+      { key: 'priority', type: 'enum', description: 'Priority.', values: ['low', 'high'] },
+    ],
+  });
+
+  assert.deepStrictEqual(customExtractionHeaders_('themes', dictionary), [
+    'themes_id',
+    'entry_id',
+    'matched_keywords',
+    'created_at',
+    'extracted_at',
+    'summary',
+    'priority',
+  ]);
+  assert.deepStrictEqual(reservedCustomFactColumns_('themes'), [
+    'themes_id',
+    'entry_id',
+    'matched_keywords',
+    'created_at',
+    'extracted_at',
+  ]);
+});
+
+test('custom extraction schema requires all dictionary fields', function() {
+  const fields = customFactFields_(JSON.stringify({
+    fields: [
+      { key: 'summary', type: 'string', description: 'Summary.' },
+      { key: 'priority', type: 'enum', description: 'Priority.', values: ['low', 'high'] },
+      { key: 'is_recurring', type: 'boolean', description: 'Repeats.' },
+    ],
+  }), 'themes');
+  const schema = customExtractionSchema_(fields);
+  const itemSchema = schema.properties.records.items;
+
+  assert.deepStrictEqual(itemSchema.required, ['summary', 'priority', 'is_recurring']);
+  assert.deepStrictEqual(itemSchema.properties.priority.enum, ['', 'low', 'high']);
+  assert.deepStrictEqual(customFactFieldSchema_(fields[2]).type, ['boolean', 'string']);
+});
+
+test('blank fact table dictionary falls back to summary evidence status', function() {
+  assert.deepStrictEqual(defaultCustomFactFields_().map(function(field) { return field.key; }), [
+    'summary',
+    'evidence',
+    'status',
+  ]);
+  assert.deepStrictEqual(customFactFields_('', 'themes').map(function(field) { return field.key; }), [
+    'summary',
+    'evidence',
+    'status',
+  ]);
+});
+
+test('keywords gate custom extraction unless AI may decide without a hit', function() {
+  const design = normalizeDesignRow_({
+    extraction_key: 'themes',
+    keywords: 'calm, focus',
+    ai_decides_without_keyword: false,
+  });
+
+  assert.deepStrictEqual(parseKeywords_('calm, focus; calm'), ['calm', 'focus']);
+  assert.deepStrictEqual(findMatchedKeywords_('I felt calm today.', design.keywords), ['calm']);
+  assert.strictEqual(shouldRunCustomExtraction_(design, 'I felt calm today.'), true);
+  assert.strictEqual(shouldRunCustomExtraction_(design, 'A different note.'), false);
+  assert.strictEqual(shouldRunCustomExtraction_(
+    { extraction_key: 'themes', keywords: '', ai_decides_without_keyword: true },
+    'A different note.'
+  ), true);
+});
+
+test('normalizes custom extraction records with matched keywords', function() {
+  const fields = customFactFields_(JSON.stringify({
+    fields: [
+      { key: 'summary', type: 'string', description: 'Summary.' },
+      { key: 'priority', type: 'enum', description: 'Priority.', values: ['low', 'high'] },
+      { key: 'is_recurring', type: 'boolean', description: 'Repeats.' },
+      { key: 'score', type: 'number', description: 'Score.' },
+    ],
+  }), 'themes');
+  const records = normalizeCustomExtraction_(
+    {
+      records: [
+        { summary: 'Keep using the calmer review loop', priority: 'high', is_recurring: 'true', score: '4' },
+        { summary: 'Unknown priority', priority: 'urgent', is_recurring: 'maybe', score: '' },
+        { summary: '   ', priority: '', is_recurring: '', score: '' },
+      ],
+    },
+    ['calm', 'review'],
+    fields
+  );
+
+  assert.deepStrictEqual(records, [
+    {
+      summary: 'Keep using the calmer review loop',
+      priority: 'high',
+      is_recurring: true,
+      score: 4,
+      matched_keywords: 'calm, review',
+    },
+    {
+      summary: 'Unknown priority',
+      priority: '',
+      is_recurring: '',
+      score: '',
+      matched_keywords: 'calm, review',
+    },
+  ]);
+});
+
+test('built-in design rows ignore fact table dictionary JSON', function() {
+  const row = normalizeDesignRow_({
+    extraction_key: 'goals',
+    sheet_name: 'Custom Goals',
+    fact_table_dictionary: JSON.stringify({ fields: [{ key: 'priority', type: 'string' }] }),
+  });
+
+  assert.strictEqual(row.sheet_name, SHEET_NAMES.GOALS);
+  assert.strictEqual(row.fact_table_dictionary.indexOf('priority') !== -1, true);
+  assert.strictEqual(row.extraction_key, 'goals');
+});
+
+test('install plan requires Drive folder and API key setup when no stored key exists', function() {
+  const plan = buildVoiceJournalInstallPlan_({}, false);
+
+  assert.strictEqual(plan.isReady, false);
+  assert.deepStrictEqual(plan.missingConfigKeys, ['DRIVE_INBOX_FOLDER_ID', 'OPENAI_API_KEY_SETUP']);
+  assert.throws(function() {
+    assertVoiceJournalInstallReady_(plan);
+  }, /DRIVE_INBOX_FOLDER_ID, OPENAI_API_KEY_SETUP/);
+});
+
+test('install plan accepts already stored API key and skips blank digest', function() {
+  const plan = buildVoiceJournalInstallPlan_(
+    {
+      DRIVE_INBOX_FOLDER_ID: 'folder_123',
+      OPENAI_API_KEY_PROPERTY: 'VOICE_JOURNAL_OPENAI_KEY',
+      DIGEST_RECIPIENT_EMAIL: '',
+    },
+    true
+  );
+
+  assert.strictEqual(plan.isReady, true);
+  assert.strictEqual(plan.apiKeyPropertyName, 'VOICE_JOURNAL_OPENAI_KEY');
+  assert.strictEqual(plan.shouldStoreApiKey, false);
+  assert.strictEqual(plan.shouldInstallDigest, false);
+});
+
+test('install plan moves setup API key and installs digest when recipient is set', function() {
+  const plan = buildVoiceJournalInstallPlan_(
+    {
+      DRIVE_INBOX_FOLDER_ID: 'folder_123',
+      OPENAI_API_KEY_SETUP: 'sk-test',
+      DIGEST_RECIPIENT_EMAIL: 'me@example.com',
+    },
+    false
+  );
+
+  assert.strictEqual(getOpenAiApiKeyPropertyName_({}), 'OPENAI_API_KEY');
+  assert.strictEqual(plan.isReady, true);
+  assert.strictEqual(plan.shouldStoreApiKey, true);
+  assert.strictEqual(plan.apiKeyToStore, 'sk-test');
+  assert.strictEqual(plan.shouldInstallDigest, true);
+});
+
+test('clears temporary API key config cell after storage', function() {
+  const calls = [];
+  const sheet = {
+    getLastRow: function() { return 3; },
+    getRange: function(row, column, rowCount, columnCount) {
+      if (row === 2 && column === 1 && rowCount === 2 && columnCount === 3) {
+        return {
+          getValues: function() {
+            return [
+              ['DRIVE_INBOX_FOLDER_ID', 'folder_123', ''],
+              ['OPENAI_API_KEY_SETUP', 'sk-test', ''],
+            ];
+          },
+        };
+      }
+      return {
+        clearContent: function() {
+          calls.push(['clearContent', row, column]);
+          return this;
+        },
+        setNote: function(note) {
+          calls.push(['setNote', row, column, note]);
+          return this;
+        },
+      };
+    },
+  };
+
+  assert.strictEqual(clearConfigValue_(sheet, 'OPENAI_API_KEY_SETUP', 'stored'), true);
+  assert.deepStrictEqual(calls, [
+    ['clearContent', 3, 2],
+    ['setNote', 3, 2, 'stored'],
+  ]);
+});
+
+test('install summary reports digest installed or skipped', function() {
+  assert.match(
+    buildVoiceJournalInstallSummary_({ pollerInstalled: true, apiKeyStored: true, digestInstalled: true }),
+    /API key stored.*Digest trigger installed/
+  );
+  assert.match(
+    buildVoiceJournalInstallSummary_({ pollerInstalled: true, apiKeyStored: false, digestInstalled: false }),
+    /already stored.*Digest trigger skipped/
+  );
 });

@@ -345,7 +345,7 @@
             ? '<a href="' + escapeHtml(result.audioUrl) + '" target="_blank" rel="noopener">Audio</a>'
             : 'No audio link';
           const support = [
-            result.relatedThoughts ? 'Related thoughts: ' + escapeHtml(result.relatedThoughts) : '',
+            result.relatedReflections ? 'Related reflections: ' + escapeHtml(result.relatedReflections) : '',
             result.moods ? 'Moods: ' + escapeHtml(result.moods) : '',
           ].filter(Boolean).join('<br>');
           return [

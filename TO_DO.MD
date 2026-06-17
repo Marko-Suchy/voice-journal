@@ -3,8 +3,8 @@
 #### Last Updated 5/19/26
 
 ### Validations
-* Validate that goals, thoughts, and to-dos are being accuretley pulled from entries.
-* Continue testing to-do list features - do they work consistently? Are they useful?
+* Validate that goals, reflections, and follow ups are being accuretley pulled from entries.
+* Continue testing follow up features - do they work consistently? Are they useful?
 
 ### Updates/Refinements:
 * Better initialize width & wrap settings for free-text fields in all facts tables.
@@ -18,4 +18,3 @@
 ### Major Features/items:
 * Add feature for a "conversation with your journal entries." This would likely use long-context with a mini gpt model to manage cost.
 * Consider how I could get people to actually test this thing, without having to make people get an OpenAI API... could I sell API keys for $5 or something like that?!
-
